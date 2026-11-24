@@ -24,6 +24,8 @@ class Module:
 
 
 def valid_source(source: str) -> bool:
+    if not source.isascii() or not unquote(source).isascii():
+        return False
     if PROJECT.fullmatch(source):
         return True
     if not source.startswith("git+https://"):

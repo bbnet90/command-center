@@ -2,7 +2,6 @@ from dataclasses import dataclass
 from difflib import get_close_matches
 from pathlib import Path
 import os
-import re
 import shlex
 import shutil
 import subprocess
@@ -12,6 +11,7 @@ import tempfile
 
 from .catalog import ID, PROJECT, REF, Module, valid_source
 from .catalog_store import load_catalog
+from .distributions import normalized
 from .plugins import distribution_name
 from .rendering import line
 
@@ -25,6 +25,21 @@ class Environment:
     managed: bool
 
     pipx_home: Path | None = None
+
+    @property
+    def uses_pipx(self) -> bool:
+        root = self.prefix.parent.parent
+        return (self.pipx and self.prefix != self.base_prefix
+                and self.prefix.parent.name == "venvs"
+                and (root == self.pipx_home or root.name == "pipx"))
+
+    @property
+    def target_python(self) -> str:
+        if not self.uses_pipx or self.prefix.name == "command-center":
+            return self.executable
+        # pipx inject explicitly targets the command-center venv.
+        relative = "Scripts/python.exe" if os.name == "nt" else "bin/python"
+        return str(self.prefix.parent / "command-center" / relative)
 
     @classmethod
     def current(cls):
@@ -61,9 +76,7 @@ def plan(env: Environment, *, module: Module | None = None, dist: str | None = N
     if not Path(env.executable).is_absolute():
         raise ValueError("Expected an absolute interpreter path")
     venv = env.prefix != env.base_prefix
-    root = env.prefix.parent.parent
-    pipx_root = root == env.pipx_home or root.name == "pipx"
-    pipx = env.pipx and venv and pipx_root and env.prefix.parent.name == "venvs"
+    pipx = env.uses_pipx
     if module is not None:
         spec = build_spec(module)
         if pipx or (not venv and env.managed):
@@ -77,8 +90,19 @@ def plan(env: Environment, *, module: Module | None = None, dist: str | None = N
     return Plan([env.executable, "-m", "pip", *args])
 
 
-def _normalized(name: str) -> str:
-    return re.sub("[-_.]+", "-", name).lower()
+def report_orphan(source, env, runner, workdir):
+    line("Paket kuruldu ama panel kaydı bulunamadı.")
+    try:
+        result = runner([env.target_python, "-m", "command_center.distributions", source],
+                        cwd=workdir, capture_output=True, text=True)
+        dist = result.stdout.removesuffix("\n")
+        if result.returncode == 0 and PROJECT.fullmatch(dist):
+            line("Kaldırmak için:")
+            line(shlex.join(plan(env, dist=dist).argv), plain=True)
+            return
+    except (OSError, ValueError):
+        pass
+    line("Kurulan paketin adı belirlenemedi.")
 
 
 def manage(action, key, yes, entries, *, env=None, runner=None) -> int:
@@ -108,7 +132,9 @@ def manage(action, key, yes, entries, *, env=None, runner=None) -> int:
                 line("Bu tür henüz desteklenmiyor")
                 return 1
             operation = plan(env, module=item)
-            line(f"{item.title} · {item.source} · {item.ref or 'sürüme sabitlenmemiş'}")
+            line(item.title, plain=True)
+            line(item.source, plain=True)
+            line(item.ref or "sürüme sabitlenmemiş", plain=True)
         else:
             if key not in entries:
                 line("Bu panel kurulu değil.")
@@ -119,13 +145,14 @@ def manage(action, key, yes, entries, *, env=None, runner=None) -> int:
                 return 1
             operation = plan(env, dist=dist)
             affected = sorted(k for k, ep in entries.items()
-                              if _normalized(distribution_name(ep) or "") == _normalized(dist))
+                              if normalized(distribution_name(ep) or "") == normalized(dist))
             line(f"Kaldırılacak paket: {dist}")
             line("Etkilenen paneller: " + ", ".join(affected))
             if len(affected) > 1:
                 line("Dikkat: Bu paketin tüm panelleri kaldırılacak.")
         if operation.blocked:
-            line("Sistem Python ortamı dışarıdan yönetiliyor. pipx veya sanal ortam kullanın.")
+            line("Sistem Python ortamı dışarıdan yönetiliyor. Önce command-center aracını pipx ile veya bir sanal ortama kurun.")
+            line("pipx ile kurduktan sonra:")
         line(shlex.join(operation.argv), plain=True)
         if adding:
             line("Bu işlem üçüncü taraf kod kurar.")
@@ -143,16 +170,15 @@ def manage(action, key, yes, entries, *, env=None, runner=None) -> int:
             if runner(operation.argv, cwd=workdir).returncode:
                 line("Paket işlemi başarısız.")
                 return 1
-            check = runner([env.executable, "-m", "command_center", "list", "--plain"],
+            check = runner([env.target_python, "-m", "command_center", "list", "--plain"],
                            cwd=workdir, capture_output=True, text=True)
+            if adding and not check.returncode and key not in check.stdout.splitlines():
+                report_orphan(item.source, env, runner, workdir)
+                return 1
         if check.returncode:
             line("Panel kayıtları doğrulanamadı.")
             return 1
         installed = set(check.stdout.splitlines())
-        if adding and key not in installed:
-            line("Kuruldu ama panel kaydı bulunamadı")
-            line("Modül henüz command_center.panels giriş noktasını sunmuyor olabilir.")
-            return 1
         if not adding and installed.intersection(affected):
             line("Kaldırma doğrulanamadı.")
             return 1

@@ -1,0 +1,9 @@
+from {package}.panel import panel
+
+
+def test_panel_contract():
+    value = panel()
+    assert isinstance(value, dict)
+    assert isinstance(value["title"], str) and value["title"].strip()
+    assert isinstance(value["lines"], list)
+    assert all(isinstance(line, str) for line in value["lines"])

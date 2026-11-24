@@ -14,7 +14,7 @@ def _settings() -> dict:
 def read_order() -> list[str] | None:
     panels = _settings().get("panels")
     if isinstance(panels, list) and all(isinstance(item, str) for item in panels):
-        return panels
+        return list(dict.fromkeys(panels))
     return None
 
 
