@@ -7,7 +7,7 @@ from .plugins import discover, distribution_name, load_panel
 from .rendering import line, render
 
 
-def show_catalog(entries, status=None, *, mark=False):
+def show_catalog(entries, status=None, *, mark=False, http_code=None):
     catalog = catalog_store.load_catalog()
     seen = state.read_seen(catalog.modules)
     for item in sorted(catalog.modules.values(), key=lambda m: (not m.featured, m.id)):
@@ -23,6 +23,8 @@ def show_catalog(entries, status=None, *, mark=False):
         line(f"Kaynak: önbellek ({catalog.age_days} gün önce)")
     if status in (catalog_store.Status.OFFLINE, catalog_store.Status.INVALID):
         line("Çevrimdışı: yenilenemedi")
+    if status == catalog_store.Status.UNAVAILABLE:
+        line(f"Katalog alınamadı (HTTP {http_code})")
     if mark:
         state.mark_seen(catalog.modules)
 
@@ -40,24 +42,37 @@ class Parser(argparse.ArgumentParser):
 
 
 def main(argv=()) -> int:
-    usages = {"list": "[--plain]", "catalog": "[--offline]",
-              "add": "<id> [--yes]", "remove": "<id> [--yes]"}
-    parser = Parser(prog="command-center", usage="command-center [list | catalog | add | remove]")
+    usages = {"new": "<id> [--dir PATH]", "list": "[--plain]", "catalog": "[--offline]",
+              "check": "[id] [--isolated]", "add": "<id> [--yes]", "remove": "<id> [--yes]"}
+    parser = Parser(prog="command-center", usage="command-center [list | catalog | add | remove | check | new]")
     commands = parser.add_subparsers(dest="command")
     for name, arguments in usages.items():
         sub = commands.add_parser(name, usage=f"command-center {name} {arguments}")
         if name == "list":
             sub.add_argument("--plain", action="store_true")
+        elif name == "new":
+            sub.add_argument("id")
+            sub.add_argument("--dir")
+        elif name == "check":
+            sub.add_argument("id", nargs="?")
+            sub.add_argument("--isolated", action="store_true")
         elif name == "catalog":
             sub.add_argument("--offline", action="store_true")
         else:
             sub.add_argument("id")
             sub.add_argument("--yes", action="store_true")
     args = parser.parse_args(argv)
+    if args.command == "new":
+        from .scaffold import create
+        return create(args.id, args.dir)
     entries = discover()
+    if args.command == "check":
+        from .check import check
+        return check(entries, args.id, isolated=args.isolated)
     if args.command == "catalog":
-        status = None if args.offline else catalog_store.refresh()
-        show_catalog(entries, status, mark=True)
+        result = (catalog_store.RefreshResult(catalog_store.Status.DISABLED) if args.offline
+                  else catalog_store.refresh_result())
+        show_catalog(entries, result.status, mark=True, http_code=result.http_code)
     elif args.command in ("add", "remove"):
         from .installer import manage
         return manage(args.command, args.id, args.yes, entries)

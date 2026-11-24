@@ -1,7 +1,5 @@
-import re
-
-CONTROLS = re.compile(r"[\x00-\x1f\x7f-\x9f]")
+import unicodedata
 
 
 def clean(text: str) -> str:
-    return CONTROLS.sub("", text)
+    return "".join(c for c in text if unicodedata.category(c) not in {"Cc", "Cf", "Zl", "Zp"})

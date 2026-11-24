@@ -74,3 +74,25 @@ ref = "1.0.0"
 package-manager command and ask for confirmation. Use `--yes` for unattended
 operation. Explicit installations let pip or pipx fetch third-party code and
 dependencies. Removal uninstalls the owning distribution and all of its panels.
+
+## Writing a module
+
+Run `command-center new example` to create a standalone package. Use
+`--dir PATH` to choose a different destination. Keep the provider **read-only**,
+**fast**, and **silent** (never print). Install the package in the same Python
+environment as the dashboard with `pip install -e .`. Run `command-center check`
+to inspect all installed panels, or `command-center check example --isolated`
+to inspect one in a fresh process with an empty home and XDG directories.
+Width, captured output, and duplicate entry point names produce warnings.
+Provider exceptions, invalid return values, or files left in the temporary
+directory fail the check. The filesystem check only sees paths left there at
+exit. Databases in a source checkout or selected by module-specific environment
+variables outside HOME are outside its scope.
+
+After publishing the package, paste the generated `[[module]]` entry into the
+catalog and edit its title, description, and published source. The ID must match
+the entry point. See the catalog example above.
+
+**Contract stability.** Changes are additive. The core reads `title` and `lines`
+and ignores extra keys. It displays at most 100 lines of 300 characters each,
+reserving the final line for a truncation notice whenever content is clipped.

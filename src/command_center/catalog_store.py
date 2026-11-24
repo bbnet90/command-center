@@ -19,6 +19,7 @@ CATALOG_URL = "https://raw.githubusercontent.com/bbnet90/command-center-catalog/
 class Status(Enum):
     UPDATED = auto()
     OFFLINE = auto()
+    UNAVAILABLE = auto()
     INVALID = auto()
     DISABLED = auto()
 
@@ -28,26 +29,38 @@ class NoRedirect(request.HTTPRedirectHandler):
         return None
 
 
+@dataclass(frozen=True)
+class RefreshResult:
+    status: Status
+    http_code: int | None = None
+
+
 def refresh(open_url=None) -> Status:
+    return refresh_result(open_url).status
+
+
+def refresh_result(open_url=None) -> RefreshResult:
     if not refresh_enabled():
-        return Status.DISABLED
+        return RefreshResult(Status.DISABLED)
     if open_url is None:
         open_url = request.build_opener(NoRedirect()).open
     try:
         with open_url(CATALOG_URL, timeout=5) as response:
             if urlsplit(response.geturl()).scheme != "https":
-                return Status.INVALID
+                return RefreshResult(Status.INVALID)
             data = response.read(MAX_BYTES + 1)
         parse(data)
         atomic_write(cache_dir() / "catalog.toml", data)
     except HTTPError as exc:
         exc.close()
-        return Status.INVALID if 300 <= exc.code < 400 else Status.OFFLINE
+        if 400 <= exc.code < 600:
+            return RefreshResult(Status.UNAVAILABLE, exc.code)
+        return RefreshResult(Status.INVALID)
     except (OSError, HTTPException):
-        return Status.OFFLINE
+        return RefreshResult(Status.OFFLINE)
     except (ValueError, RecursionError):
-        return Status.INVALID
-    return Status.UPDATED
+        return RefreshResult(Status.INVALID)
+    return RefreshResult(Status.UPDATED)
 
 
 @dataclass

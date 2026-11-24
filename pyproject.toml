@@ -21,4 +21,4 @@ where = ["src"]
 pythonpath = ["src"]
 
 [tool.setuptools.package-data]
-command_center = ["data/catalog.toml"]
+command_center = ["data/catalog.toml", "data/templates/*.tmpl"]

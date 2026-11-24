@@ -58,7 +58,7 @@ def test_lists(catalog, monkeypatch, capsys):
     main(["list"])
     output = capsys.readouterr().out
     assert "alpha · ? · gösteriliyor" in output and "z · pkg · gizli" in output
-    monkeypatch.setattr(catalog_store, "refresh", lambda: pytest.fail("network"))
+    monkeypatch.setattr(catalog_store, "refresh_result", lambda: pytest.fail("network"))
     state.mark_seen({"alpha"})
     main(["catalog", "--offline"])
     out = capsys.readouterr().out
@@ -68,7 +68,7 @@ def test_lists(catalog, monkeypatch, capsys):
     assert "yeni" not in capsys.readouterr().out
     for status, expected in [(catalog_store.Status.UPDATED, "Kaynak: güncel indirme"),
                              (catalog_store.Status.OFFLINE, "Çevrimdışı: yenilenemedi")]:
-        monkeypatch.setattr(catalog_store, "refresh", lambda: status)
+        monkeypatch.setattr(catalog_store, "refresh_result", lambda: catalog_store.RefreshResult(status))
         main(["catalog"])
         assert expected in capsys.readouterr().out
 
