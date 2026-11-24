@@ -1,16 +1,22 @@
-import os
-from pathlib import Path
 import tomllib
+
+from .paths import config_dir
+
+
+def _settings() -> dict:
+    try:
+        with (config_dir() / "config.toml").open("rb") as stream:
+            return tomllib.load(stream)
+    except (OSError, ValueError, RecursionError):
+        return {}
 
 
 def read_order() -> list[str] | None:
-    root = os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config"
-    path = Path(root) / "command-center" / "config.toml"
-    try:
-        with path.open("rb") as stream:
-            panels = tomllib.load(stream).get("panels")
-    except (OSError, ValueError, RecursionError):
-        return None
+    panels = _settings().get("panels")
     if isinstance(panels, list) and all(isinstance(item, str) for item in panels):
         return panels
     return None
+
+
+def refresh_enabled() -> bool:
+    return _settings().get("catalog_refresh") is not False

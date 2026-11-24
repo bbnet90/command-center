@@ -39,3 +39,38 @@ panels = ["example", "another"]
 
 Unknown IDs are silently skipped. An empty list selects no panels. A missing
 file, missing key, or malformed configuration shows all installed panels in ID order.
+
+## Catalog and package management
+
+Run `command-center list` to see installed panels, their packages, and their
+visibility. Use `list --plain` for one installed ID per line. With no installed
+panels, the dashboard displays the offline catalog.
+
+`command-center catalog` tries one HTTPS request before displaying the catalog.
+Use `catalog --offline` for one offline lookup, or set `catalog_refresh = false`
+in `config.toml` to disable all catalog requests. Other commands read local data.
+The core ships a snapshot in `data/catalog.toml`. A valid cached download at
+`$XDG_CACHE_HOME/command-center/catalog.toml` takes precedence. Entries in
+`$XDG_CONFIG_HOME/command-center/catalog.local.toml` override either by ID.
+Seen IDs live in `$XDG_STATE_HOME/command-center/state.json`. The XDG roots
+default to `~/.cache`, `~/.config`, and `~/.local/state`, respectively.
+
+Authors register their entry point as above and add a matching record to the
+shared catalog or a local catalog:
+
+```toml
+format = 1
+
+[[module]]
+id = "example"
+title = "Örnek"
+description = "Örnek bir panel gösterir."
+kind = "panel"
+source = "example-plugin"
+ref = "1.0.0"
+```
+
+`command-center add <id>` and `command-center remove <id>` show the exact
+package-manager command and ask for confirmation. Use `--yes` for unattended
+operation. Explicit installations let pip or pipx fetch third-party code and
+dependencies. Removal uninstalls the owning distribution and all of its panels.

@@ -39,7 +39,10 @@ def entry(name, provider=None):
 
 
 def test_no_plugins(run):
-    assert run() == "Hiç modül yüklü değil.\n"
+    output = run()
+    assert output.startswith("Hiç modül yüklü değil.\n\n")
+    assert "Evdeki Eşyalar" in output
+    assert output.endswith("Modül kurmak için: command-center add <id>\n")
 
 
 def test_valid_plugin(run):

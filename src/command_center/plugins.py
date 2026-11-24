@@ -14,3 +14,8 @@ def load_panel(entry: metadata.EntryPoint) -> PanelData:
         return validate(provider())
     except (Exception, SystemExit):
         return {"title": entry.name, "lines": ["Bu modüle ulaşılamadı"]}
+
+
+def distribution_name(entry) -> str | None:
+    dist = getattr(entry, "dist", None)
+    return getattr(dist, "name", None)
