@@ -12,10 +12,13 @@ dependencies = ["rich"]
 dev = ["pytest"]
 
 [project.scripts]
-command-center = "command_center.cli:main"
+command-center = "command_center.cli:entrypoint"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
+
+[tool.setuptools.package-data]
+command_center = ["data/catalog.toml", "data/templates/*.tmpl"]

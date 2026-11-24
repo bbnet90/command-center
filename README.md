@@ -39,3 +39,60 @@ panels = ["example", "another"]
 
 Unknown IDs are silently skipped. An empty list selects no panels. A missing
 file, missing key, or malformed configuration shows all installed panels in ID order.
+
+## Catalog and package management
+
+Run `command-center list` to see installed panels, their packages, and their
+visibility. Use `list --plain` for one installed ID per line. With no installed
+panels, the dashboard displays the offline catalog.
+
+`command-center catalog` tries one HTTPS request before displaying the catalog.
+Use `catalog --offline` for one offline lookup, or set `catalog_refresh = false`
+in `config.toml` to disable all catalog requests. Other commands read local data.
+The core ships a snapshot in `data/catalog.toml`. A valid cached download at
+`$XDG_CACHE_HOME/command-center/catalog.toml` takes precedence. Entries in
+`$XDG_CONFIG_HOME/command-center/catalog.local.toml` override either by ID.
+Seen IDs live in `$XDG_STATE_HOME/command-center/state.json`. The XDG roots
+default to `~/.cache`, `~/.config`, and `~/.local/state`, respectively.
+
+Authors register their entry point as above and add a matching record to the
+shared catalog or a local catalog:
+
+```toml
+format = 1
+
+[[module]]
+id = "example"
+title = "Örnek"
+description = "Örnek bir panel gösterir."
+kind = "panel"
+source = "example-plugin"
+ref = "1.0.0"
+```
+
+`command-center add <id>` and `command-center remove <id>` show the exact
+package-manager command and ask for confirmation. Use `--yes` for unattended
+operation. Explicit installations let pip or pipx fetch third-party code and
+dependencies. Removal uninstalls the owning distribution and all of its panels.
+
+## Writing a module
+
+Run `command-center new example` to create a standalone package. Use
+`--dir PATH` to choose a different destination. Keep the provider **read-only**,
+**fast**, and **silent** (never print). Install the package in the same Python
+environment as the dashboard with `pip install -e .`. Run `command-center check`
+to inspect all installed panels, or `command-center check example --isolated`
+to inspect one in a fresh process with an empty home and XDG directories.
+Width, captured output, and duplicate entry point names produce warnings.
+Provider exceptions, invalid return values, or files left in the temporary
+directory fail the check. The filesystem check only sees paths left there at
+exit. Databases in a source checkout or selected by module-specific environment
+variables outside HOME are outside its scope.
+
+After publishing the package, paste the generated `[[module]]` entry into the
+catalog and edit its title, description, and published source. The ID must match
+the entry point. See the catalog example above.
+
+**Contract stability.** Changes are additive. The core reads `title` and `lines`
+and ignores extra keys. It displays at most 100 lines of 300 characters each,
+reserving the final line for a truncation notice whenever content is clipped.
