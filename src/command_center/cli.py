@@ -15,16 +15,8 @@ def show_catalog(entries, status=None, *, mark=False, http_code=None):
         star = "★ " if item.featured else ""
         line(f"{star}{item.id} · {item.title} · {item.kind} {label}".rstrip())
         line(f"  {item.description}")
-    if status == catalog_store.Status.UPDATED:
-        line("Kaynak: güncel indirme")
-    elif catalog.age_days is None:
-        line("Kaynak: çatıyla gelen liste")
-    else:
-        line(f"Kaynak: önbellek ({catalog.age_days} gün önce)")
-    if status in (catalog_store.Status.OFFLINE, catalog_store.Status.INVALID):
-        line("Çevrimdışı: yenilenemedi")
-    if status == catalog_store.Status.UNAVAILABLE:
-        line(f"Katalog alınamadı (HTTP {http_code})")
+    for row in catalog_store.footer(catalog, status, http_code):
+        line(row)
     if mark:
         state.mark_seen(catalog.modules)
 
@@ -42,12 +34,15 @@ class Parser(argparse.ArgumentParser):
 
 
 def main(argv=()) -> int:
-    usages = {"new": "<id> [--dir PATH]", "list": "[--plain]", "catalog": "[--offline]",
+    usages = {"llm": "", "new": "<id> [--dir PATH]", "list": "[--plain]", "catalog": "[--offline]",
               "check": "[id] [--isolated]", "add": "<id> [--yes]", "remove": "<id> [--yes]"}
-    parser = Parser(prog="command-center", usage="command-center [list | catalog | add | remove | check | new]")
+    parser = Parser(prog="command-center", usage="command-center [list | catalog | add | remove | check | new | llm]")
+    parser.add_argument("--plain", action="store_true")
     commands = parser.add_subparsers(dest="command")
     for name, arguments in usages.items():
         sub = commands.add_parser(name, usage=f"command-center {name} {arguments}")
+        if name == "llm":
+            continue
         if name == "list":
             sub.add_argument("--plain", action="store_true")
         elif name == "new":
@@ -62,9 +57,21 @@ def main(argv=()) -> int:
             sub.add_argument("id")
             sub.add_argument("--yes", action="store_true")
     args = parser.parse_args(argv)
+    if args.command is None and not args.plain and sys.stdin.isatty() and sys.stdout.isatty():
+        from .shell import Dashboard
+        Dashboard().run()
+        return 0
     if args.command == "new":
         from .scaffold import create
         return create(args.id, args.dir)
+    if args.command == "llm":
+        from .llm import providers
+        available, selected = providers()
+        if not available:
+            line("Model bağlı değil")
+        for key in sorted(available):
+            line(f"{key} · seçili" if key == selected else key)
+        return 0
     entries = discover()
     if args.command == "check":
         from .check import check

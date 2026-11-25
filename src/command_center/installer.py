@@ -90,22 +90,23 @@ def plan(env: Environment, *, module: Module | None = None, dist: str | None = N
     return Plan([env.executable, "-m", "pip", *args])
 
 
-def report_orphan(source, env, runner, workdir):
-    line("Paket kuruldu ama panel kaydı bulunamadı.")
+def report_orphan(source, env, runner, workdir, emit=line):
+    emit("Paket kuruldu ama panel kaydı bulunamadı.")
+    emit("Modül henüz command_center.panels giriş noktası sunmuyor olabilir.")
     try:
         result = runner([env.target_python, "-m", "command_center.distributions", source],
                         cwd=workdir, capture_output=True, text=True)
         dist = result.stdout.removesuffix("\n")
         if result.returncode == 0 and PROJECT.fullmatch(dist):
-            line("Kaldırmak için:")
-            line(shlex.join(plan(env, dist=dist).argv), plain=True)
+            emit("Kaldırmak için:")
+            emit(shlex.join(plan(env, dist=dist).argv), plain=True)
             return
     except (OSError, ValueError):
         pass
-    line("Kurulan paketin adı belirlenemedi.")
+    emit("Kurulan paketin adı belirlenemedi.")
 
 
-def manage(action, key, yes, entries, *, env=None, runner=None) -> int:
+def manage(action, key, yes, entries, *, env=None, runner=None, emit=line, confirm=None, catalog=None) -> int:
     if action not in ("add", "remove"):
         raise ValueError("Unknown package operation")
     if runner is None:
@@ -113,79 +114,83 @@ def manage(action, key, yes, entries, *, env=None, runner=None) -> int:
     env = env or Environment.current()
     adding = action == "add"
     if not ID.fullmatch(key) and (adding or key not in entries):
-        line("Geçersiz modül kimliği.")
+        emit("Geçersiz modül kimliği.")
         return 2
     try:
         if adding:
             if key in entries:
-                line("Bu modül zaten kurulu.")
+                emit("Bu modül zaten kurulu.")
                 return 0
-            modules = load_catalog().modules
+            modules = (catalog or load_catalog()).modules
             item = modules.get(key)
             if item is None:
-                line(f"Bilinmeyen modül: {key}")
+                emit(f"Bilinmeyen modül: {key}")
                 matches = get_close_matches(key, modules)
                 if matches:
-                    line("Benzer kimlikler: " + ", ".join(matches))
+                    emit("Benzer kimlikler: " + ", ".join(matches))
                 return 1
             if item.kind != "panel":
-                line("Bu tür henüz desteklenmiyor")
+                emit("Bu tür henüz desteklenmiyor")
                 return 1
             operation = plan(env, module=item)
-            line(item.title, plain=True)
-            line(item.source, plain=True)
-            line(item.ref or "sürüme sabitlenmemiş", plain=True)
+            emit(item.title, plain=True)
+            emit(item.source, plain=True)
+            emit(item.ref or "sürüme sabitlenmemiş", plain=True)
         else:
             if key not in entries:
-                line("Bu panel kurulu değil.")
+                emit("Bu panel kurulu değil.")
                 return 1
             dist = distribution_name(entries[key])
             if not dist:
-                line("Panelin paket adı belirlenemedi.")
+                emit("Panelin paket adı belirlenemedi.")
                 return 1
             operation = plan(env, dist=dist)
             affected = sorted(k for k, ep in entries.items()
                               if normalized(distribution_name(ep) or "") == normalized(dist))
-            line(f"Kaldırılacak paket: {dist}")
-            line("Etkilenen paneller: " + ", ".join(affected))
+            emit(f"Kaldırılacak paket: {dist}")
+            emit("Etkilenen paneller: " + ", ".join(affected))
             if len(affected) > 1:
-                line("Dikkat: Bu paketin tüm panelleri kaldırılacak.")
+                emit("Dikkat: Bu paketin tüm panelleri kaldırılacak.")
         if operation.blocked:
-            line("Sistem Python ortamı dışarıdan yönetiliyor. Önce command-center aracını pipx ile veya bir sanal ortama kurun.")
-            line("pipx ile kurduktan sonra:")
-        line(shlex.join(operation.argv), plain=True)
+            emit("Sistem Python ortamı dışarıdan yönetiliyor. Önce command-center aracını pipx ile veya bir sanal ortama kurun.")
+            emit("pipx ile kurduktan sonra:")
+        emit(shlex.join(operation.argv), plain=True)
         if adding:
-            line("Bu işlem üçüncü taraf kod kurar.")
+            emit("Bu işlem üçüncü taraf kod kurar.")
         if operation.blocked:
             return 1
-        if not yes:
+        if confirm is not None:
+            if not confirm():
+                emit("İşlem iptal edildi.")
+                return 0
+        elif not yes:
             if not sys.stdin.isatty():
-                line("Etkileşimsiz kullanım için --yes gerekli.")
+                emit("Etkileşimsiz kullanım için --yes gerekli.")
                 return 1
             if input("Devam edilsin mi? [e/H] ").strip().casefold() != "e":
-                line("İşlem iptal edildi.")
+                emit("İşlem iptal edildi.")
                 return 0
         # An unrelated local directory must never shadow a registry project name.
         with tempfile.TemporaryDirectory() as workdir:
             if runner(operation.argv, cwd=workdir).returncode:
-                line("Paket işlemi başarısız.")
+                emit("Paket işlemi başarısız.")
                 return 1
             check = runner([env.target_python, "-m", "command_center", "list", "--plain"],
                            cwd=workdir, capture_output=True, text=True)
             if adding and not check.returncode and key not in check.stdout.splitlines():
-                report_orphan(item.source, env, runner, workdir)
+                report_orphan(item.source, env, runner, workdir, emit)
                 return 1
         if check.returncode:
-            line("Panel kayıtları doğrulanamadı.")
+            emit("Panel kayıtları doğrulanamadı.")
             return 1
         installed = set(check.stdout.splitlines())
         if not adding and installed.intersection(affected):
-            line("Kaldırma doğrulanamadı.")
+            emit("Kaldırma doğrulanamadı.")
             return 1
-        line("Kuruldu ve bağlandı." if adding else "Paket kaldırıldı.")
+        emit("Kuruldu ve bağlandı." if adding else "Paket kaldırıldı.")
         return 0
     except (EOFError, KeyboardInterrupt):
-        line("İşlem kesildi.")
+        emit("İşlem kesildi.")
     except (OSError, ValueError):
-        line("Paket işlemi gerçekleştirilemedi.")
+        emit("Paket işlemi gerçekleştirilemedi.")
     return 1

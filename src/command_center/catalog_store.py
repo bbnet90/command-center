@@ -85,3 +85,18 @@ def load_catalog(clock=time.time) -> Catalog:
     except (OSError, ValueError, RecursionError):
         pass
     return Catalog(modules, age)
+
+
+def footer(catalog, status=None, http_code=None):
+    if status == Status.UPDATED:
+        yield "Kaynak: güncel indirme"
+    elif catalog.age_days is None:
+        yield "Kaynak: çatıyla gelen liste"
+    else:
+        yield f"Kaynak: önbellek ({catalog.age_days} gün önce)"
+    if status == Status.INVALID:
+        yield "Katalog dosyası geçersiz"
+    if status == Status.OFFLINE:
+        yield "Çevrimdışı: yenilenemedi"
+    if status == Status.UNAVAILABLE:
+        yield f"Katalog alınamadı (HTTP {http_code})"

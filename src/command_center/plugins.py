@@ -1,7 +1,6 @@
-from contextlib import redirect_stderr, redirect_stdout
+from .capture import capture
 from dataclasses import dataclass
 from importlib import metadata
-from io import StringIO
 from time import perf_counter
 
 from .contract import PanelData, validate
@@ -47,17 +46,10 @@ class PanelResult:
     elapsed_ms: float
 
 
-class _CapturedStream(StringIO):
-    # The caller owns the captured output, even if a provider closes its stream.
-    def close(self):
-        pass
-
-
 def inspect_panel(entry: metadata.EntryPoint) -> PanelResult:
-    stdout, stderr = _CapturedStream(), _CapturedStream()
     panel = error = None
     start = perf_counter()
-    with redirect_stdout(stdout), redirect_stderr(stderr):
+    with capture("stdout") as stdout, capture("stderr") as stderr:
         try:
             provider = entry.load()
             panel = validate(provider())
