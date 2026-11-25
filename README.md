@@ -77,7 +77,7 @@ def panel():
 
 Return a plain dictionary with a non-empty string title and a list of text
 lines. An optional `open` argument list enables an explicit terminal action. Plugins can use this contract without importing the core. A load, call,
-or validation failure displays an error inside the affected panel.
+or validation failure displays a panel error on the first load. Later failures retain the last successful data and mark it stale.
 
 ## Configuration
 
@@ -104,7 +104,7 @@ come first, followed by other visible panels in configured or alphabetical
 order. Writes are atomic. A corrupt state file is treated as missing.
 
 Unknown IDs are silently skipped. An empty list selects no panels. A missing
-file, missing key, or malformed configuration shows all installed panels in ID order.
+file, missing key, or malformed configuration makes all installed panels visible. The static view sorts them by ID; the dashboard applies any saved order first.
 
 ## Catalog and package management
 
@@ -176,18 +176,16 @@ id = "todo"
 title = "Yapılacaklar"
 panel = ["todo", "panel", "--json"]
 open = ["todo"]
-timeout = 10
 ```
 
 The dashboard runs the argument list directly from the home directory, with
 stdin closed. Return one UTF-8 JSON document on stdout, for example
 `{"title":"Yapılacaklar","lines":["Görev yok."],"open":["todo"]}`.
-The limit is 64 KiB and the timeout is 1–30 seconds. Each panel loads
+The stdout limit is 64 KiB. The optional integer `timeout` defaults to 10 seconds and accepts 1–30. Each panel loads
 independently. `check` reports errors and `doctor` lists configuration issues.
 The optional open command (explicit configuration takes precedence) runs only
 on Enter in the focused panel. The dashboard lends it the terminal and
 refreshes the panel when it returns. Only configure trusted programs.
-
 
 ## Trust and troubleshooting
 

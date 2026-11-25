@@ -13,6 +13,7 @@ from .background import background
 from textual.app import App, ComposeResult, SuspendNotSupported
 from textual.binding import Binding
 from textual.containers import Container, Vertical, VerticalScroll
+from textual.message import Message
 from textual.screen import ModalScreen
 from textual.widgets import Input, Static
 
@@ -60,6 +61,12 @@ class Section(VerticalScroll):
     can_focus = True
     BINDINGS = [("enter", "open_panel", "Aç")]
 
+    class Loaded(Message):
+        def __init__(self, generation, data):
+            super().__init__()
+            self.generation = generation
+            self.data = data
+
     def __init__(self, key, entry):
         super().__init__()
         self.key = key
@@ -104,9 +111,10 @@ class Section(VerticalScroll):
     @background
     def fetch(self, token):
         data = inspect_panel(self.entry).panel
-        self.app.call_from_thread(self.receive, token, data)
+        self.post_message(self.Loaded(token, data))
 
-    def receive(self, token, data):
+    def on_section_loaded(self, event):
+        token, data = event.generation, event.data
         self.in_flight -= 1
         if self.is_mounted and token == self.generation:
             self.panel_loading = False
