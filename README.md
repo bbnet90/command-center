@@ -133,3 +133,28 @@ the entry point. See the catalog example above.
 **Contract stability.** Changes are additive. The core reads `title` and `lines`
 and ignores extra keys. It displays at most 100 lines of 300 characters each,
 reserving the final line for a truncation notice whenever content is clipped.
+
+## Non-Python modules
+
+Command panels are local programs configured by the user. The shell discovers
+these alongside Python entry points. Python wins when both use the same ID.
+For example, install a version of the Todo CLI supporting `panel --json`,
+put its executable on PATH, then add this to command-center's config.toml:
+
+```toml
+[[command_panel]]
+id = "todo"
+title = "Yapılacaklar"
+panel = ["todo", "panel", "--json"]
+open = ["todo"]
+timeout = 10
+```
+
+The dashboard runs the argument list directly from the home directory, with
+stdin closed. Return one UTF-8 JSON document on stdout, for example
+`{"title":"Yapılacaklar","lines":["Görev yok."],"open":["todo"]}`.
+The limit is 64 KiB and the timeout is 1–30 seconds. Each panel loads
+independently. `check` reports errors and `doctor` lists configuration issues.
+The optional open command (explicit configuration takes precedence) runs only
+on Enter in the focused panel. The dashboard lends it the terminal and
+refreshes the panel when it returns. Only configure trusted programs.

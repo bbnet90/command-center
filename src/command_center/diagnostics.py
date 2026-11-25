@@ -11,7 +11,7 @@ from . import catalog_store, llm
 from .config import refresh_enabled
 from .installer import Environment
 from .paths import cache_dir, config_dir, state_dir
-from .plugins import conflicts, distribution_name, inspect_panel
+from .plugins import conflicts, package_label, inspect_panel
 from .text import clean
 from .version import version
 
@@ -46,7 +46,12 @@ def report(entries):
         row(package, metadata.version(package))
     for name, path in paths().items():
         row(name, f"{display(path)} ({'var' if path.exists() else 'yok'})")
+    from .command_panels import configured
+    _, errors = configured()
+    for error in errors:
+        row("Komut paneli", error)
     validators = {
+        "command_panel": lambda v: not errors,
         "panels": lambda v: isinstance(v, list) and all(isinstance(x, str) for x in v),
         "catalog_refresh": lambda v: isinstance(v, bool),
         "layout": lambda v: v in ("single", "two-column"),
@@ -71,7 +76,7 @@ def report(entries):
     row("Paneller", len(entries))
     for name, entry in sorted(entries.items()):
         result = inspect_panel(entry)
-        row(name, f"{distribution_name(entry) or '?'} · {'FAIL' if result.error else 'OK'} · {result.elapsed_ms:.2f} ms")
+        row(name, f"{package_label(entry)} · {'FAIL' if result.error else 'OK'} · {result.elapsed_ms:.2f} ms")
     duplicates = conflicts()
     row("Giriş noktası çakışmaları", len(duplicates))
     for key, names in sorted(duplicates.items()):

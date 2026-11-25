@@ -4,7 +4,7 @@ import sys
 from . import catalog_store, state
 from .config import read_order
 from .version import version
-from .plugins import discover, distribution_name, load_panel
+from .plugins import discover, package_label, load_panel
 from .rendering import line, render
 
 
@@ -120,7 +120,7 @@ def main(argv=()) -> int:
                 line(key, plain=True)
             else:
                 visible = "gösteriliyor" if order is None or key in order else "gizli"
-                line(f"{key} · {distribution_name(entries[key]) or '?'} · {visible}")
+                line(f"{key} · {package_label(entries[key])} · {visible}")
     elif not entries:
         print("Hiç modül yüklü değil.\n")
         show_catalog(entries)
