@@ -21,6 +21,9 @@ def _report(entry) -> bool:
     status = "FAIL" if result.error else "OK"
     line(f"{entry.name} · {package_label(entry)} · {status} · "
          f"{result.elapsed_ms:.2f} ms · {len(lines)} satır · en geniş: {width}")
+    if isinstance(entry, CommandPanel):
+        for label, path in entry.command_paths():
+            line(f"{label}: {path}", plain=True)
     if result.invalid_open:
         line("Uyarı: open komutu geçersiz.")
     if result.error:

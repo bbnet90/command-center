@@ -46,7 +46,7 @@ def report(entries):
         row(package, metadata.version(package))
     for name, path in paths().items():
         row(name, f"{display(path)} ({'var' if path.exists() else 'yok'})")
-    from .command_panels import configured
+    from .command_panels import CommandPanel, configured
     _, errors = configured()
     for error in errors:
         row("Komut paneli", error)
@@ -78,6 +78,9 @@ def report(entries):
     for name, entry in sorted(entries.items()):
         result = inspect_panel(entry)
         row(name, f"{package_label(entry)} · {'FAIL' if result.error else 'OK'} · {result.elapsed_ms:.2f} ms")
+        if isinstance(entry, CommandPanel):
+            for label, path in entry.command_paths():
+                row(f"{name} {label}", path)
     duplicates = conflicts()
     row("Giriş noktası çakışmaları", len(duplicates))
     for key, names in sorted(duplicates.items()):

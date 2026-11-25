@@ -114,3 +114,40 @@ def test_command_stderr_is_captured():
     entry = command("""import sys;print("diagnostic",file=sys.stderr);print('{"lines":[]}')""")
     result = inspect_panel(entry)
     assert result.panel and result.stderr == "diagnostic\n"
+
+
+def test_windows_command_lookup(monkeypatch):
+    from command_center import command_panels as cp
+
+    programs = [
+        r"C:\Program Files (x86)\nodejs\todo.cmd",
+        r"C:\Users\Ali & Veli\AppData\Roaming\npm\todo.cmd",
+        r"C:\Users\Enes!\AppData\Roaming\npm\todo.cmd",
+    ]
+    launches = []
+    def popen(argv, **kwargs):
+        assert not kwargs.get("shell", False)
+        launches.append(argv)
+        return object()
+
+    with monkeypatch.context() as patch:
+        patch.setattr(cp.os, "name", "nt")
+        def which(name, *, path):
+            assert path == "shim-dir"
+            return program if name == "todo" else None
+        patch.setattr(cp.shutil, "which", which)
+        patch.setattr(cp.subprocess, "Popen", popen)
+        env = {**os.environ, "PATH": "shim-dir"}
+        processes = Processes()
+        for program in programs:
+            processes.start(["todo", "panel", "--json"], env=env)
+        for char in '&|<>^%"!()\r\n':
+            with pytest.raises(cp.CommandLookupError, match="güvenli olmayan"):
+                processes.start(["todo", "a" + char + "b"], env=env)
+        for char in '"%\r\n':
+            program = rf"C:\prefix{char}suffix\todo.cmd"
+            with pytest.raises(cp.CommandLookupError, match="yolunda güvenli olmayan"):
+                processes.start(["todo"], env=env)
+        with pytest.raises(cp.CommandLookupError, match="Komut bulunamadı: missing"):
+            processes.start(["missing"], env=env)
+    assert launches == [[path, "panel", "--json"] for path in programs]
