@@ -40,7 +40,7 @@ source="a"
 @pytest.mark.parametrize(("code", "status", "footer"), [
     (404, catalog_store.Status.UNAVAILABLE, "Katalog alınamadı (HTTP 404)"),
     (503, catalog_store.Status.UNAVAILABLE, "Katalog alınamadı (HTTP 503)"),
-    (302, catalog_store.Status.INVALID, "Çevrimdışı: yenilenemedi"),
+    (302, catalog_store.Status.INVALID, "Katalog dosyası geçersiz"),
 ])
 def test_http_failure(code, status, footer, monkeypatch, capsys):
     def fetch(*args, **kwargs):

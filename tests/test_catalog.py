@@ -137,7 +137,7 @@ def test_seen():
 
 def test_generic_core():
     for path in (Path(__file__).parents[1] / "src/command_center").glob("*.py"):
-        for forbidden in ("home_inventory", "home-inventory", "budget", "wallet", "todo"):
+        for forbidden in ("home_inventory", "home-inventory", "budget", "wallet", "todo", "ollama", "openai", "anthropic", "llama", "qwen"):
             assert forbidden not in path.read_text().lower(), path
 
 

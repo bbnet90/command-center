@@ -1,11 +1,48 @@
 # command-center
 
 A small offline terminal dashboard for Python 3.11+. The core discovers panels
-from installed packages, prints each selected panel once, and exits. Installing
+from installed packages and opens a Textual dashboard on a terminal. Use
+`command-center --plain` to print a single snapshot. Redirected input or output
+also selects the static view. Installing
 or removing a plugin changes which panels are available.
 
 Install with `pip install .` and run `command-center`. For development, install
 with `pip install -e '.[dev]'` and run `pytest`.
+
+## Interactive dashboard
+
+Tab and Shift+Tab move between the optional question input and panels. Use
+the arrows or PageUp/PageDown to scroll a panel, `r` to reload it and `R` to
+reload all panels. Brackets move the focused panel in the display order.
+Press `l` to toggle single/two-column layout and `t` to cycle built-in themes.
+Two columns require at least 100 terminal columns. Each panel loads independently.
+A ten-second notice leaves its worker running and late results can still appear.
+
+Press `m` for modules. Enter previews installation and `x` previews removal.
+Confirm with `y` or press another key to cancel. Package output appears in the
+log. Escape closes the catalog. Use `q` outside the input or Ctrl+C to quit.
+
+`config.toml` accepts `layout = "single"` or `"two-column"` and a built-in
+`theme` name. The dashboard saves its `order`, `layout`, and `theme` alongside
+`seen` in state.json. Saved preferences override configuration defaults. The
+`panels` list still controls visibility. Saved IDs come first, followed by
+the remaining visible panels in configured or alphabetical order.
+
+## Optional question provider
+
+Register a callable in a separate installed package:
+
+```toml
+[project.entry-points."command_center.llm"]
+example = "example_provider:answer"
+```
+
+`answer(question: str, context: str) -> str` receives up to 500 question
+characters and 4000 characters of loaded panel titles and lines. Return plain
+text. The UI limits answers to 2000 characters. Escape discards a pending
+answer. Set `llm = "example"` to select a provider, or use the first installed
+ID alphabetically. Run `command-center llm` to inspect the selection.
+The distribution ships without a provider.
 
 ## Plugin contract
 
@@ -48,7 +85,7 @@ panels, the dashboard displays the offline catalog.
 
 `command-center catalog` tries one HTTPS request before displaying the catalog.
 Use `catalog --offline` for one offline lookup, or set `catalog_refresh = false`
-in `config.toml` to disable all catalog requests. Other commands read local data.
+in `config.toml` to disable all catalog requests. Opening the interactive module catalog also requests a refresh unless disabled.
 The core ships a snapshot in `data/catalog.toml`. A valid cached download at
 `$XDG_CACHE_HOME/command-center/catalog.toml` takes precedence. Entries in
 `$XDG_CONFIG_HOME/command-center/catalog.local.toml` override either by ID.
