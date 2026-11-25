@@ -49,7 +49,9 @@ def refresh_result(open_url=None) -> RefreshResult:
             if urlsplit(response.geturl()).scheme != "https":
                 return RefreshResult(Status.INVALID)
             data = response.read(MAX_BYTES + 1)
-        parse(data)
+        modules, _ = parse(data)
+        if not modules:
+            return RefreshResult(Status.INVALID)
         atomic_write(cache_dir() / "catalog.toml", data)
     except HTTPError as exc:
         exc.close()

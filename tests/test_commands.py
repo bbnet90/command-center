@@ -130,3 +130,18 @@ def test_interrupt(catalog, capsys):
 
     assert manage("add", "alpha", True, {}, env=ENV, runner=interrupted) == 1
     assert "İşlem kesildi." in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(("key", "repo", "ref"), [
+    ("inventory", "home-inventory", "9c431bfe9f7a135a0f75f45cf6909c265c6decc0"),
+    ("budget", "budget-stream", "e0a264904bee642e17c66c96526bd032b1f722bc"),
+])
+def test_bundled_add_preview(key, repo, ref, monkeypatch, capsys):
+    monkeypatch.setattr(installer.Environment, "current", lambda: ENV)
+    monkeypatch.setattr(metadata, "entry_points", lambda **kw: [])
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda _: "H")
+    assert main(["add", key]) == 0
+    output = capsys.readouterr().out
+    assert f"-m pip install git+https://github.com/bbnet90/{repo}@{ref}" in output
+    assert "İşlem iptal edildi." in output
