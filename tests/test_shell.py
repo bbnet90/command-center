@@ -335,3 +335,54 @@ def test_quit_during_package_process(monkeypatch):
             finally:
                 await app.packages.shutdown()
     asyncio.run(exercise())
+
+
+@pytest.mark.parametrize("size", [(40, 24), (50, 30), (80, 40), (120, 40)])
+def test_responsive_panels_and_help(monkeypatch, size):
+    from rich.cells import cell_len
+    from command_center.shell import HINTS, KeyHelp
+
+    setup(monkeypatch, [panel("a"), panel("b")])
+
+    async def exercise():
+        app = Dashboard()
+        async with app.run_test(size=size) as pilot:
+            await until(lambda: all(section.data for section in app.sections))
+            await pilot.pause()
+            for section in app.sections:
+                assert app.screen.region.contains_region(section.region)
+                assert section.max_scroll_y > 0
+                assert all(cell_len(row) <= section.scrollable_content_region.width
+                           for row in section.query_one(Static).content.plain.splitlines())
+                assert "güncellendi" in section.border_subtitle
+            section.focus()
+            for theme in ("textual-light", "textual-dark", "nord"):
+                app.theme = theme
+                await pilot.pause()
+                assert app.focused is section, (app.focused, section.has_focus, theme)
+                assert "❯" in section.border_title
+                assert section.styles.border != app.sections[0].styles.border
+            hint = app.query_one("#hints").content.plain
+            assert ("Tab odak" in hint) == (size[0] >= cell_len(HINTS))
+            await pilot.press("question_mark")
+            assert isinstance(app.screen, KeyHelp)
+            await pilot.press("escape")
+            assert app.screen is app.base_screen
+    asyncio.run(exercise())
+
+
+def test_failed_refresh_preserves_last_success(monkeypatch):
+    values = iter([{"title": "A", "lines": ["sonuç"]}, None])
+    setup(monkeypatch, [entry("a", lambda: next(values))])
+
+    async def exercise():
+        app = Dashboard()
+        async with app.run_test():
+            section = app.sections[0]
+            await until(lambda: section.last_success)
+            section.reload()
+            await until(lambda: section.unresponsive)
+            assert section.rows == ["sonuç"] and section.has_class("stale")
+            assert section.border_subtitle == f"eski veri · {section.last_success}"
+            assert "1 panel yanıt vermiyor" in app.query_one("#greeting").content.plain
+    asyncio.run(exercise())

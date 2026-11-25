@@ -7,23 +7,53 @@ import threading
 from threading import current_thread, main_thread
 from datetime import datetime
 
+from rich.cells import cell_len
 from rich.text import Text
 from .background import background
 from textual.app import App, ComposeResult, SuspendNotSupported
 from textual.binding import Binding
 from textual.containers import Container, Vertical, VerticalScroll
+from textual.screen import ModalScreen
 from textual.widgets import Input, Static
 
 from . import llm, state
 from .command_panels import Processes
 from .config import read_order, settings
 from .package_process import PackageProcess
-from .plugins import discover, load_panel
+from .plugins import discover, inspect_panel
 from .rendering import PANEL_WIDTH, clipped
 from .text import clean
 
 
 HINTS = "Tab odak · ↑↓ kaydır · r yenile · [ ] taşı · l yerleşim · t tema · m modüller · q çık"
+
+
+class KeyHelp(ModalScreen):
+    BINDINGS = [("escape,question_mark", "dismiss", "Kapat"), ("q", "app.quit", "Çık")]
+
+    def compose(self):
+        yield Static(Text(
+            "Klavye yardımı\n"
+            "Tab / Shift+Tab · Sonraki / önceki odak\n"
+            "↑ ↓ / PgUp PgDn · Paneli kaydır\n"
+            "r / R · Paneli / tümünü yenile\n"
+            "[ / ] · Paneli yukarı / aşağı taşı\n"
+            "l / t · Yerleşimi / temayı değiştir\n"
+            "Enter · Paneli aç veya soruyu gönder\n"
+            "Esc · Yanıtı iptal et veya pencereyi kapat\n"
+            "m · Katalog: Enter kur, x kaldır, y onayla\n"
+            "? · Yardım   q / Ctrl+C · Çık"
+        ))
+
+
+def greeting(hour):
+    if 6 <= hour < 12:
+        return "Günaydın"
+    if 12 <= hour < 18:
+        return "İyi günler"
+    if 18 <= hour < 22:
+        return "İyi akşamlar"
+    return "İyi geceler"
 
 
 class Section(VerticalScroll):
@@ -38,12 +68,15 @@ class Section(VerticalScroll):
         self.caption = clean(key)
         self.rows = ["yükleniyor…"]
         self.generation = 0
+        self.panel_loading = False
+        self.unresponsive = False
+        self.last_success = None
 
     def compose(self):
         yield Static(Text(self.rows[0]), markup=False)
 
     def redraw(self):
-        self.border_title = Text(("❯ " if self.has_focus else "") + self.caption)
+        self.border_title = Text(("❯ " if self.app.focused is self else "") + self.caption)
         if self.is_mounted:
             self.app.update_hints()
             self.query_one(Static).update(clipped(self.rows, self.scrollable_content_region.width))
@@ -51,27 +84,43 @@ class Section(VerticalScroll):
     def reload(self):
         self.generation += 1
         token = self.generation
-        self.data = None
-        self.rows = ["yükleniyor…"]
+        self.panel_loading = True
+        if self.last_success is None:
+            self.rows = ["yükleniyor…"]
         self.redraw()
         self.set_timer(10, lambda: self.slow(token))
         self.fetch(token)
 
     def slow(self, token):
-        if self.generation == token and self.data is None:
-            self.rows = ["yanıt vermiyor…"]
+        if self.generation == token and self.panel_loading:
+            self.unresponsive = True
+            if self.last_success is None:
+                self.rows = ["yanıt vermiyor…"]
+            self.app.clock()
             self.redraw()
 
     @background
     def fetch(self, token):
-        data = load_panel(self.entry)
+        data = inspect_panel(self.entry).panel
         self.app.call_from_thread(self.receive, token, data)
 
     def receive(self, token, data):
         if self.is_mounted and token == self.generation:
+            self.panel_loading = False
+            self.unresponsive = data is None
+            if data is not None:
+                self.last_success = datetime.now().strftime("%H:%M")
+                self.border_subtitle = f"güncellendi {self.last_success}"
+            elif self.last_success:
+                self.border_subtitle = f"eski veri · {self.last_success}"
+                data = self.data
+            else:
+                data = {"title": self.key, "lines": ["Bu modüle ulaşılamadı"]}
+            self.set_class(self.unresponsive and bool(self.last_success), "stale")
             self.data = data
             self.caption = clean(data["title"])
             self.rows = data["lines"]
+            self.app.clock()
             self.redraw()
 
     async def action_open_panel(self):
@@ -102,9 +151,8 @@ class Section(VerticalScroll):
 
 class PanelBody(VerticalScroll):
     def on_resize(self, event):
-        self.query_one("#sections").set_class(
-            self.app.preset == "two-column" and self.screen.size.width >= 2 * PANEL_WIDTH, "wide"
-        )
+        self.app.size_sections(self, event.size.height)
+        self.app.update_hints()
 
 
 class Dashboard(App):
@@ -117,10 +165,14 @@ class Dashboard(App):
     #sections {{ layout: grid; grid-size: 1; grid-rows: auto; height: auto; width: {PANEL_WIDTH}; max-width: 100%; }}
     #sections.wide {{ grid-size: 2; width: {2 * PANEL_WIDTH}; }}
     Section {{ border: round $secondary; height: auto; min-height: 3; max-height: 12; padding: 0 1; }}
+    Section.stale {{ border-subtitle-color: $warning; }}
+    KeyHelp {{ align: center middle; background: $background 85%; }}
+    KeyHelp Static {{ width: auto; max-width: 100%; height: auto; border: round $accent; }}
     Section:focus {{ border: round $accent; }}
     #hints {{ height: 1; width: 100%; border-top: none; background: $boost; }}
     """
     BINDINGS = [
+        ("question_mark", "help", "Yardım"),
         ("m", "modules", "Modüller"),
         ("escape", "cancel", "İptal"),
         ("left_square_bracket", "move(-1)", "Yukarı"),
@@ -215,8 +267,21 @@ class Dashboard(App):
     def action_layout(self):
         self.preset = "single" if self.preset == "two-column" else "two-column"
         state.save(layout=self.preset)
-        self.base_screen.query_one("#sections").set_class(
-            self.preset == "two-column" and self.size.width >= 2 * PANEL_WIDTH, "wide")
+        self.size_sections(self.base_screen.query_one(PanelBody))
+
+    def size_sections(self, body, height=None):
+        height = height or body.size.height
+        wide = self.preset == "two-column" and self.size.width >= 2 * PANEL_WIDTH
+        body.query_one("#sections").set_class(wide, "wide")
+        columns = 2 if wide else 1
+        rows = max(1, (len(self.sections) + columns - 1) // columns)
+        limit = max(3, min(int(height * .6), height // rows))
+        for section in self.sections:
+            section.styles.max_height = limit
+
+    def action_help(self):
+        if self.screen is self.base_screen:
+            self.push_screen(KeyHelp())
 
     def action_cycle_theme(self):
         themes = list(self.available_themes)
@@ -247,6 +312,7 @@ class Dashboard(App):
         await grid.remove_children()
         self.sections = [Section(k, self.entries[k]) for k in self.visible(read_order(), state.preferences())]
         await grid.mount(*self.sections)
+        self.size_sections(self.base_screen.query_one(PanelBody))
         for section in self.sections:
             section.reload()
         self.clock()
@@ -265,7 +331,10 @@ class Dashboard(App):
         section = self.focused
         argv = (section.data or {}).get("open") if isinstance(section, Section) else None
         hint = "Enter → " + clean(shlex.join(argv)) + " · " if argv else ""
-        self.base_screen.query_one("#hints", Static).update(Text(hint + HINTS, no_wrap=True))
+        full = hint + HINTS
+        short = hint + "? yardım · q çık"
+        self.base_screen.query_one("#hints", Static).update(
+            Text(full if cell_len(full) <= self.size.width else short, no_wrap=True))
 
     def action_refresh(self):
         if isinstance(self.focused, Section):
@@ -297,8 +366,11 @@ class Dashboard(App):
         self.show_answer(self.request, "")
 
     def clock(self):
+        now = datetime.now()
+        count = sum(s.unresponsive for s in self.sections)
+        warning = f" · {count} panel yanıt vermiyor" if count else ""
         self.base_screen.query_one("#greeting", Static).update(Text(
-            f"Merhaba · {datetime.now():%d.%m.%Y %H:%M} · {len(self.entries)} panel yüklü"))
+            f"{greeting(now.hour)} · {now:%d.%m.%Y %H:%M} · {len(self.entries)} panel yüklü{warning}"))
 
 
 def run_dashboard():
