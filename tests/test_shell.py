@@ -386,3 +386,46 @@ def test_failed_refresh_preserves_last_success(monkeypatch):
             assert section.border_subtitle == f"eski veri · {section.last_success}"
             assert "1 panel yanıt vermiyor" in app.query_one("#greeting").content.plain
     asyncio.run(exercise())
+
+
+@pytest.mark.parametrize(("value", "interval"), [(None, 0), (0, 0), (True, 0), ("30", 0),
+                                                  (-1, 30), (1, 30), (80, 80), (7200, 3600)])
+def test_auto_interval(value, interval):
+    from command_center.config import refresh_interval
+    assert refresh_interval(value) == interval
+
+
+def test_auto_refresh_ticks(monkeypatch):
+    gate = Event()
+    setup(monkeypatch, [entry("a", lambda: gate.wait(5)), panel("b")])
+    (config_dir() / "config.toml").write_text("refresh_seconds=31\ncatalog_refresh=false")
+
+    async def exercise():
+        app = Dashboard()
+        schedule = {}
+        original = app.set_interval
+
+        def clock(seconds, callback, **kwargs):
+            if seconds == 31:
+                schedule[seconds] = callback
+                return
+            return original(seconds, callback, **kwargs)
+        monkeypatch.setattr(app, "set_interval", clock)
+        async with app.run_test() as pilot:
+            try:
+                a, b = app.sections
+                await until(lambda: b.data)
+                tick = schedule[31]
+                tick()
+                tick()
+                assert (a.generation, b.generation) == (1, 2)
+                await until(lambda: not b.in_flight)
+                await pilot.press("question_mark")
+                tick()
+                assert b.generation == 2
+                await pilot.press("escape")
+                tick()
+                assert b.generation == 3
+            finally:
+                gate.set()
+    asyncio.run(exercise())

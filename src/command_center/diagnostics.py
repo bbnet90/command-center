@@ -53,6 +53,7 @@ def report(entries):
     validators = {
         "command_panel": lambda v: not errors,
         "panels": lambda v: isinstance(v, list) and all(isinstance(x, str) for x in v),
+        "refresh_seconds": lambda v: type(v) is int,
         "catalog_refresh": lambda v: isinstance(v, bool),
         "layout": lambda v: v in ("single", "two-column"),
         "theme": valid_theme,

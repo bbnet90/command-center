@@ -18,7 +18,7 @@ from textual.widgets import Input, Static
 
 from . import llm, state
 from .command_panels import Processes
-from .config import read_order, settings
+from .config import read_order, refresh_interval, settings
 from .package_process import PackageProcess
 from .plugins import discover, inspect_panel
 from .rendering import PANEL_WIDTH, clipped
@@ -68,6 +68,7 @@ class Section(VerticalScroll):
         self.caption = clean(key)
         self.rows = ["yükleniyor…"]
         self.generation = 0
+        self.in_flight = 0
         self.panel_loading = False
         self.unresponsive = False
         self.last_success = None
@@ -84,6 +85,7 @@ class Section(VerticalScroll):
     def reload(self):
         self.generation += 1
         token = self.generation
+        self.in_flight += 1
         self.panel_loading = True
         if self.last_success is None:
             self.rows = ["yükleniyor…"]
@@ -105,6 +107,7 @@ class Section(VerticalScroll):
         self.app.call_from_thread(self.receive, token, data)
 
     def receive(self, token, data):
+        self.in_flight -= 1
         if self.is_mounted and token == self.generation:
             self.panel_loading = False
             self.unresponsive = data is None
@@ -201,6 +204,7 @@ class Dashboard(App):
         order = read_order()
         saved = state.preferences()
         defaults = settings()
+        self.refresh_seconds = refresh_interval(defaults.get("refresh_seconds"))
         self.preset = saved.get("layout", defaults.get("layout"))
         if self.preset != "two-column":
             self.preset = "single"
@@ -261,6 +265,8 @@ class Dashboard(App):
             self.call_after_refresh(self.action_modules)
         self.clock()
         self.set_interval(60, self.clock)
+        if self.refresh_seconds:
+            self.set_interval(self.refresh_seconds, self.auto_refresh)
         for section in self.sections:
             section.reload()
 
@@ -339,6 +345,12 @@ class Dashboard(App):
     def action_refresh(self):
         if isinstance(self.focused, Section):
             self.focused.reload()
+
+    def auto_refresh(self):
+        if self.screen is self.base_screen and not self.shutdown_started and self.open_child is None:
+            for section in self.sections:
+                if not section.in_flight:
+                    section.reload()
 
     def action_refresh_all(self):
         for section in self.sections:
