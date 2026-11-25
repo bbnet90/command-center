@@ -45,7 +45,9 @@ def resolve_command(argv, env=None):
         program = path.abspath(program)
     resolved = [program, *argv[1:]]
     if windows and program.lower().endswith((".cmd", ".bat")):
-        if any(char in arg for arg in resolved for char in '&|<>^%"!()\r\n'):
+        if any(char in program for char in '"%\r\n'):
+            raise CommandLookupError("Windows toplu iş dosyasının yolunda güvenli olmayan karakter.")
+        if any(char in arg for arg in resolved[1:] for char in '&|<>^%"!()\r\n'):
             raise CommandLookupError("Windows toplu iş komutunda güvenli olmayan karakter.")
     return resolved
 
