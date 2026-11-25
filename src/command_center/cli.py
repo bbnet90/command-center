@@ -3,6 +3,7 @@ import sys
 
 from . import catalog_store, state
 from .config import read_order
+from .version import version
 from .plugins import discover, distribution_name, load_panel
 from .rendering import line, render
 
@@ -21,27 +22,53 @@ def show_catalog(entries, status=None, *, mark=False, http_code=None):
         state.mark_seen(catalog.modules)
 
 
+COMMANDS = {
+    "list": ("[--plain]", "Kurulu panelleri listele.", ("list", "list --plain")),
+    "catalog": ("[--offline]", "Modül kataloğunu göster.", ("catalog", "catalog --offline")),
+    "add": ("<id> [--yes]", "Bir modül kur.", ("add ornek", "add ornek --yes")),
+    "remove": ("<id> [--yes]", "Bir modülü kaldır.", ("remove ornek", "remove ornek --yes")),
+    "check": ("[id] [--isolated]", "Panel sözleşmesini denetle.", ("check", "check ornek --isolated")),
+    "new": ("<id> [--dir YOL]", "Yeni bir modül projesi oluştur.", ("new ornek", "new ornek --dir ./panelim")),
+    "llm": ("", "Model sağlayıcılarını ve seçimi göster.", ("llm", "llm > modeller.txt")),
+    "doctor": ("", "Çevrimdışı tanılama raporu yaz.", ("doctor", "doctor > rapor.txt")),
+}
+
+
 class Parser(argparse.ArgumentParser):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, add_help=False, allow_abbrev=False, **kwargs)
         self.add_argument("-h", "--help", action="help")
 
     def format_help(self):
-        return f"Kullanım: {self.usage}\n"
+        rows = [f"Kullanım: {self.usage}"]
+        name = self.prog.split()[-1]
+        if name in COMMANDS:
+            _, description, examples = COMMANDS[name]
+            rows.extend((description, "", "Örnekler:"))
+            rows.extend(f"  command-center {example}" for example in examples)
+        else:
+            from .diagnostics import paths
+            from .text import clean
+            rows.extend(("", "Komutlar:"))
+            rows.extend(f"  {key:<9} {spec[1]}" for key, spec in COMMANDS.items())
+            rows.extend(("", "--plain       Statik görünümü yaz.",
+                         "-V, --version Sürümü göster.", "-h, --help    Yardımı göster.", "", "Dosyalar:"))
+            rows.extend(f"  {label}: {clean(str(path))}" for label, path in paths().items())
+            rows.extend(("", "Ortam: XDG_CONFIG_HOME, XDG_STATE_HOME, XDG_CACHE_HOME, HOME"))
+        return "\n".join(rows) + "\n"
 
     def error(self, message):
         self.exit(2, "Geçersiz kullanım. Yardım için: command-center --help\n")
 
 
 def main(argv=()) -> int:
-    usages = {"llm": "", "new": "<id> [--dir PATH]", "list": "[--plain]", "catalog": "[--offline]",
-              "check": "[id] [--isolated]", "add": "<id> [--yes]", "remove": "<id> [--yes]"}
-    parser = Parser(prog="command-center", usage="command-center [list | catalog | add | remove | check | new | llm]")
+    parser = Parser(prog="command-center", usage="command-center [seçenekler] [komut]")
+    parser.add_argument("-V", "--version", action="version", version=f"command-center {version()}")
     parser.add_argument("--plain", action="store_true")
     commands = parser.add_subparsers(dest="command")
-    for name, arguments in usages.items():
+    for name, (arguments, _, _) in COMMANDS.items():
         sub = commands.add_parser(name, usage=f"command-center {name} {arguments}")
-        if name == "llm":
+        if name in ("llm", "doctor"):
             continue
         if name == "list":
             sub.add_argument("--plain", action="store_true")
@@ -73,6 +100,9 @@ def main(argv=()) -> int:
             line(f"{key} · seçili" if key == selected else key)
         return 0
     entries = discover()
+    if args.command == "doctor":
+        from .diagnostics import report
+        return report(entries)
     if args.command == "check":
         from .check import check
         return check(entries, args.id, isolated=args.isolated)
