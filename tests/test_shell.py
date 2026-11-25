@@ -3,12 +3,14 @@ from importlib import metadata
 from threading import Event
 from types import SimpleNamespace
 
+import pytest
 from textual.widgets import Input, OptionList, RichLog, Static
 
 from command_center import catalog_store, llm, state
 from command_center.catalog import Module
 from command_center.catalog_screen import CatalogScreen, Confirmation
 from command_center.cli import main
+from command_center.installer import Environment
 from command_center.paths import config_dir, state_dir
 from command_center.rendering import PANEL_WIDTH, render
 from command_center.shell import Dashboard, Section
@@ -142,7 +144,14 @@ def test_llm(monkeypatch, capsys):
     asyncio.run(exercise())
 
 
-def test_catalog_flow(monkeypatch):
+@pytest.fixture
+def install_venv(tmp_path, monkeypatch):
+    prefix = tmp_path / "venv"
+    env = Environment(prefix, tmp_path, str(prefix / "python"), pipx=False, managed=False)
+    monkeypatch.setattr(Environment, "current", lambda: env)
+
+
+def test_catalog_flow(monkeypatch, install_venv):
     installed = []
     setup(monkeypatch, installed)
     item = Module("demo", "[red] Başlık", "Tanım", "panel", "demo-pkg", featured=True)
@@ -224,7 +233,7 @@ def test_refresh_and_scroll(monkeypatch):
     asyncio.run(exercise())
 
 
-def test_catalog_failed_verification(monkeypatch):
+def test_catalog_failed_verification(monkeypatch, install_venv):
     setup(monkeypatch, [])
     item = Module("demo", "Deneme", "Açıklama", "panel", "demo-pkg", ref="1")
     monkeypatch.setattr(catalog_store, "load_catalog", lambda: catalog_store.Catalog({"demo": item}, 1))
