@@ -18,7 +18,7 @@ from textual.screen import ModalScreen
 from textual.widgets import Input, Static
 
 from . import llm, state
-from .command_panels import Processes
+from .command_panels import CommandLookupError, Processes, resolve_command
 from .config import read_order, refresh_interval, settings
 from .package_process import PackageProcess
 from .plugins import discover, inspect_panel
@@ -144,6 +144,8 @@ class Section(VerticalScroll):
                 # Leave the context normally so the terminal is always restored.
                 try:
                     await self.app.open_runner(argv)
+                except CommandLookupError as exc:
+                    notice = str(exc)
                 except FileNotFoundError:
                     notice = "Komut bulunamadı: " + clean(argv[0])
                 except (OSError, ValueError, RuntimeError):
@@ -332,7 +334,7 @@ class Dashboard(App):
         self.clock()
 
     async def run_open(self, argv):
-        proc = await asyncio.create_subprocess_exec(*argv)
+        proc = await asyncio.create_subprocess_exec(*resolve_command(argv))
         self.open_child = proc
         try:
             await proc.wait()

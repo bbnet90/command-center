@@ -1,8 +1,10 @@
 """Read explicitly configured command panels and bound their subprocesses."""
 from dataclasses import dataclass, field
 import json
+import ntpath
 import os
 from pathlib import Path
+import shutil
 import signal
 import subprocess
 import sys
@@ -13,6 +15,39 @@ from .config import settings
 from .contract import valid_argv
 
 MAX_OUTPUT = 65536
+
+
+class CommandLookupError(ValueError):
+    """A configured command cannot be safely launched."""
+
+
+def resolve_command(argv, env=None):
+    """Resolve a command for direct execution, preserving its arguments."""
+    env = os.environ if env is None else env
+    windows = os.name == "nt"
+    path = ntpath if windows else os.path
+    program = argv[0]
+    if not path.dirname(program):
+        search = env.get("PATH", os.defpath)
+        if windows and env.get("PATHEXT") != os.environ.get("PATHEXT"):
+            # which() only consults the parent PATHEXT. Respect a child override
+            # without mutating the process environment in a dashboard thread.
+            extensions = (env.get("PATHEXT") or ".COM;.EXE;.BAT;.CMD").split(";")
+            names = [program + ext for ext in extensions if ext]
+            if program.lower().endswith(tuple(ext.lower() for ext in extensions if ext)):
+                names.insert(0, program)
+            program = next((candidate for folder in search.split(";") for name in names
+                            if os.path.isfile(candidate := path.join(folder, name))), None)
+        else:
+            program = shutil.which(program, path=search)
+        if program is None:
+            raise CommandLookupError(f"Komut bulunamadı: {argv[0]}; PATH'e eklenmiş mi?")
+        program = path.abspath(program)
+    resolved = [program, *argv[1:]]
+    if windows and program.lower().endswith((".cmd", ".bat")):
+        if any(char in arg for arg in resolved for char in '&|<>^%"!()\r\n'):
+            raise CommandLookupError("Windows toplu iş komutunda güvenli olmayan karakter.")
+    return resolved
 
 
 def kill_group(proc):
@@ -35,6 +70,7 @@ class Processes:
         with self.lock:
             if self.closed:
                 raise RuntimeError("Uygulama kapanıyor.")
+            argv = resolve_command(argv, kwargs.get("env"))
             proc = subprocess.Popen(argv, start_new_session=os.name == "posix", **kwargs)
             self.active.add(proc)
             return proc
@@ -61,6 +97,14 @@ class CommandPanel:
     timeout: int
     processes: Processes = field(repr=False)
     env: dict | None = None
+
+    def command_paths(self):
+        for label, argv in (("panel", self.argv), ("open", self.opening)):
+            if argv:
+                try:
+                    yield label, resolve_command(argv, self.env)[0]
+                except CommandLookupError as exc:
+                    yield label, str(exc)
 
     def load(self):
         return self.read
