@@ -2,6 +2,7 @@ import io
 from importlib import resources
 import os
 from pathlib import Path
+import re
 from urllib import request
 from urllib.error import URLError
 
@@ -71,6 +72,9 @@ def test_layers():
     snapshot = resources.files("command_center").joinpath("data", "catalog.toml")
     bundled, dropped = parse(snapshot.read_bytes(), "bundled")
     assert dropped == 0 and bundled and store.load_catalog().modules == bundled
+    for module in bundled.values():
+        if module.kind == "panel" and module.source.startswith("git+"):
+            assert re.fullmatch(r"[0-9a-fA-F]{40}", module.ref or ""), module.id
     cache = cache_dir() / "catalog.toml"
     save(cache, DATA)
     os.utime(cache, (10, 10))
@@ -90,6 +94,11 @@ def test_layers():
 
 @pytest.mark.parametrize(("payload", "url", "status"), [
     (DATA, "https://host/a", store.Status.UPDATED),
+    (DATA + b"[[module]]", "https://host/a", store.Status.UPDATED),
+    (HEADER, "https://host/a", store.Status.INVALID),
+    (HEADER + b"module = []", "https://host/a", store.Status.INVALID),
+    (HEADER + b"[[module]]", "https://host/a", store.Status.INVALID),
+    (b"format = 2", "https://host/a", store.Status.INVALID),
     (b"?", "https://host/a", store.Status.INVALID),
     (DATA, "http://host/a", store.Status.INVALID),
     (b"x"*(MAX_BYTES+1), "https://host/a", store.Status.INVALID),
@@ -98,7 +107,8 @@ def test_layers():
 ])
 def test_refresh(monkeypatch, payload, url, status):
     cache = cache_dir() / "catalog.toml"
-    save(cache, HEADER)
+    original = DATA.replace(b"Alpha.Project", b"Previous.Project")
+    save(cache, original)
 
     class Response(io.BytesIO):
         def geturl(self):
@@ -116,7 +126,7 @@ def test_refresh(monkeypatch, payload, url, status):
 
     monkeypatch.setattr(request, "urlopen", fetch)
     assert store.refresh(request.urlopen) == status
-    assert cache.read_bytes() == (DATA if status == store.Status.UPDATED else HEADER)
+    assert cache.read_bytes() == (payload if status == store.Status.UPDATED else original)
 
 
 def test_disabled(monkeypatch):
