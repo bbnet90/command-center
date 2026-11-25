@@ -309,3 +309,29 @@ def test_answer_contract_limits():
     assert llm.answer(entry("test", respond), "q"*501, "a"*4001) == "[red]"
     assert received == [("q"*500, "a"*4000)]
     assert llm.answer(entry("test", lambda *_: []), "", "") == "Model yanıt vermedi"
+
+
+def test_quit_during_package_process(monkeypatch):
+    import sys
+
+    setup(monkeypatch, [panel("a")])
+
+    async def exercise():
+        app = Dashboard()
+        async with app.run_test() as pilot:
+            child = asyncio.create_task(asyncio.to_thread(
+                app.packages.run, [sys.executable, "-c", "import time; time.sleep(120)"],
+                cwd=None, emit=lambda _: None,
+            ))
+            try:
+                await until(lambda: app.packages.child is not None)
+                await pilot.press("q")
+                assert isinstance(app.screen, Confirmation)
+                assert app.screen.prompt == "Kurulum sürüyor, çıkılsın mı? (y/n)"
+                await pilot.press("n")
+                assert not child.done()
+                await pilot.press("q", "y")
+                assert (await asyncio.wait_for(child, 4)).returncode != 0
+            finally:
+                await app.packages.shutdown()
+    asyncio.run(exercise())

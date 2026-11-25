@@ -58,8 +58,8 @@ def main(argv=()) -> int:
             sub.add_argument("--yes", action="store_true")
     args = parser.parse_args(argv)
     if args.command is None and not args.plain and sys.stdin.isatty() and sys.stdout.isatty():
-        from .shell import Dashboard
-        Dashboard().run()
+        from .shell import run_dashboard
+        run_dashboard()
         return 0
     if args.command == "new":
         from .scaffold import create

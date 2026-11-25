@@ -1,7 +1,12 @@
+import os
+import signal
+import sys
+import threading
+from threading import current_thread, main_thread
 from datetime import datetime
 
 from rich.text import Text
-from textual import work
+from .background import background
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Vertical, VerticalScroll
@@ -9,6 +14,7 @@ from textual.widgets import Input, Static
 
 from . import llm, state
 from .config import read_order, settings
+from .package_process import PackageProcess
 from .plugins import discover, load_panel
 from .rendering import PANEL_WIDTH, clipped
 from .text import clean
@@ -48,7 +54,7 @@ class Section(VerticalScroll):
             self.rows = ["yanıt vermiyor…"]
             self.redraw()
 
-    @work(thread=True, exit_on_error=False)
+    @background
     def fetch(self, token):
         data = load_panel(self.entry)
         self.app.call_from_thread(self.receive, token, data)
@@ -100,7 +106,10 @@ class Dashboard(App):
 
     def __init__(self, *, runner=None):
         super().__init__()
-        self.runner = runner
+        self.packages = PackageProcess()
+        self.runner = runner or self.packages.run
+        self.shutdown_started = False
+        self.quit_prompt = False
         providers, selected = llm.providers()
         self.provider = providers.get(selected)
         self.request = 0
@@ -115,6 +124,28 @@ class Dashboard(App):
         if isinstance(theme, str) and theme in self.available_themes:
             self.theme = theme
         self.sections = [Section(k, self.entries[k]) for k in self.visible(order, saved)]
+
+    async def shutdown(self):
+        if self.shutdown_started:
+            return
+        self.shutdown_started = True
+        await self.packages.shutdown()
+        self.exit()
+
+    async def action_quit(self):
+        if self.packages.child is not None:
+            if not self.quit_prompt:
+                from .catalog_screen import Confirmation
+                self.quit_prompt = True
+                self.push_screen(Confirmation([], prompt="Kurulum sürüyor, çıkılsın mı? (y/n)"),
+                                 self.quit_decided)
+            return
+        await self.shutdown()
+
+    async def quit_decided(self, confirmed):
+        self.quit_prompt = False
+        if confirmed:
+            await self.shutdown()
 
     def visible(self, order, saved):
         visible = sorted(self.entries) if order is None else order
@@ -199,7 +230,7 @@ class Dashboard(App):
         self.ask(self.request, event.value, llm.context(s.data for s in self.sections if s.data))
         event.input.value = ""
 
-    @work(thread=True, exit_on_error=False)
+    @background
     def ask(self, token, question, context):
         response = llm.answer(self.provider, question, context)
         self.call_from_thread(self.show_answer, token, response)
@@ -215,3 +246,30 @@ class Dashboard(App):
     def clock(self):
         self.base_screen.query_one("#greeting", Static).update(Text(
             f"Merhaba · {datetime.now():%d.%m.%Y %H:%M} · {len(self.entries)} panel yüklü"))
+
+
+def run_dashboard():
+    original_threads = set(threading.enumerate())
+    app = Dashboard()
+    previous = {}
+
+    def stop(signum, frame):
+        app.call_later(app.shutdown)
+
+    try:
+        if current_thread() is main_thread():
+            for name in ("SIGINT", "SIGTERM", "SIGHUP"):
+                if hasattr(signal, name):
+                    sig = getattr(signal, name)
+                    previous[sig] = signal.signal(sig, stop)
+        app.run()
+    finally:
+        for sig, handler in previous.items():
+            signal.signal(sig, handler)
+    # Third-party code can explicitly create a non-daemon thread. The terminal
+    # and signal handlers are restored before bypassing its interpreter join.
+    if any(not thread.daemon and thread not in original_threads
+           for thread in threading.enumerate()):
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os._exit(0)
