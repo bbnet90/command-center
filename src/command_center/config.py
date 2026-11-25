@@ -20,3 +20,9 @@ def read_order() -> list[str] | None:
 
 def refresh_enabled() -> bool:
     return settings().get("catalog_refresh") is not False
+
+
+def refresh_interval(value):
+    if type(value) is not int or value == 0:
+        return 0
+    return max(30, min(3600, value))

@@ -309,3 +309,123 @@ def test_answer_contract_limits():
     assert llm.answer(entry("test", respond), "q"*501, "a"*4001) == "[red]"
     assert received == [("q"*500, "a"*4000)]
     assert llm.answer(entry("test", lambda *_: []), "", "") == "Model yanıt vermedi"
+
+
+def test_quit_during_package_process(monkeypatch):
+    import sys
+
+    setup(monkeypatch, [panel("a")])
+
+    async def exercise():
+        app = Dashboard()
+        async with app.run_test() as pilot:
+            child = asyncio.create_task(asyncio.to_thread(
+                app.packages.run, [sys.executable, "-c", "import time; time.sleep(120)"],
+                cwd=None, emit=lambda _: None,
+            ))
+            try:
+                await until(lambda: app.packages.child is not None)
+                await pilot.press("q")
+                assert isinstance(app.screen, Confirmation)
+                assert app.screen.prompt == "Kurulum sürüyor, çıkılsın mı? (y/n)"
+                await pilot.press("n")
+                assert not child.done()
+                await pilot.press("q", "y")
+                assert (await asyncio.wait_for(child, 4)).returncode != 0
+            finally:
+                await app.packages.shutdown()
+    asyncio.run(exercise())
+
+
+@pytest.mark.parametrize("size", [(40, 24), (50, 30), (80, 40), (120, 40)])
+def test_responsive_panels_and_help(monkeypatch, size):
+    from rich.cells import cell_len
+    from command_center.shell import HINTS, KeyHelp
+
+    setup(monkeypatch, [panel("a"), panel("b")])
+
+    async def exercise():
+        app = Dashboard()
+        async with app.run_test(size=size) as pilot:
+            await until(lambda: all(section.data for section in app.sections))
+            await pilot.pause()
+            for section in app.sections:
+                assert app.screen.region.contains_region(section.region)
+                assert section.max_scroll_y > 0
+                assert all(cell_len(row) <= section.scrollable_content_region.width
+                           for row in section.query_one(Static).content.plain.splitlines())
+                assert "güncellendi" in section.border_subtitle
+            section.focus()
+            for theme in ("textual-light", "textual-dark", "nord"):
+                app.theme = theme
+                await pilot.pause()
+                assert app.focused is section, (app.focused, section.has_focus, theme)
+                assert "❯" in section.border_title
+                assert section.styles.border != app.sections[0].styles.border
+            hint = app.query_one("#hints").content.plain
+            assert ("Tab odak" in hint) == (size[0] >= cell_len(HINTS))
+            await pilot.press("question_mark")
+            assert isinstance(app.screen, KeyHelp)
+            await pilot.press("escape")
+            assert app.screen is app.base_screen
+    asyncio.run(exercise())
+
+
+def test_failed_refresh_preserves_last_success(monkeypatch):
+    values = iter([{"title": "A", "lines": ["sonuç"]}, None])
+    setup(monkeypatch, [entry("a", lambda: next(values))])
+
+    async def exercise():
+        app = Dashboard()
+        async with app.run_test():
+            section = app.sections[0]
+            await until(lambda: section.last_success)
+            section.reload()
+            await until(lambda: section.unresponsive)
+            assert section.rows == ["sonuç"] and section.has_class("stale")
+            assert section.border_subtitle == f"eski veri · {section.last_success}"
+            assert "1 panel yanıt vermiyor" in app.query_one("#greeting").content.plain
+    asyncio.run(exercise())
+
+
+@pytest.mark.parametrize(("value", "interval"), [(None, 0), (0, 0), (True, 0), ("30", 0),
+                                                  (-1, 30), (1, 30), (80, 80), (7200, 3600)])
+def test_auto_interval(value, interval):
+    from command_center.config import refresh_interval
+    assert refresh_interval(value) == interval
+
+
+def test_auto_refresh_ticks(monkeypatch):
+    gate = Event()
+    setup(monkeypatch, [entry("a", lambda: gate.wait(5)), panel("b")])
+    (config_dir() / "config.toml").write_text("refresh_seconds=31\ncatalog_refresh=false")
+
+    async def exercise():
+        app = Dashboard()
+        schedule = {}
+        original = app.set_interval
+
+        def clock(seconds, callback, **kwargs):
+            if seconds == 31:
+                schedule[seconds] = callback
+                return
+            return original(seconds, callback, **kwargs)
+        monkeypatch.setattr(app, "set_interval", clock)
+        async with app.run_test() as pilot:
+            try:
+                a, b = app.sections
+                await until(lambda: b.data)
+                tick = schedule[31]
+                tick()
+                tick()
+                assert (a.generation, b.generation) == (1, 2)
+                await until(lambda: not b.in_flight)
+                await pilot.press("question_mark")
+                tick()
+                assert b.generation == 2
+                await pilot.press("escape")
+                tick()
+                assert b.generation == 3
+            finally:
+                gate.set()
+    asyncio.run(exercise())

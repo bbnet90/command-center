@@ -1,8 +1,7 @@
 from threading import Event
-import subprocess
 
 from rich.text import Text
-from textual import work
+from .background import background
 from textual.screen import ModalScreen
 from textual.widgets import OptionList, RichLog, Static
 from textual.widgets.option_list import Option
@@ -13,12 +12,13 @@ from .text import clean
 
 
 class Confirmation(ModalScreen):
-    def __init__(self, rows):
+    def __init__(self, rows, prompt="Onaylamak için y · diğer tuşlar iptal"):
         super().__init__()
         self.rows = rows
+        self.prompt = prompt
 
     def compose(self):
-        yield Static(Text("\n".join([*self.rows, "Onaylamak için y · diğer tuşlar iptal"])))
+        yield Static(Text("\n".join([*self.rows, self.prompt])))
 
     def on_key(self, event):
         event.stop()
@@ -27,7 +27,8 @@ class Confirmation(ModalScreen):
 
 
 class CatalogScreen(ModalScreen):
-    BINDINGS = [("escape", "close", "Kapat"), ("x", "remove", "Kaldır")]
+    BINDINGS = [("q", "app.quit", "Çık"), ("ctrl+c", "app.quit", "Çık"),
+                ("escape", "close", "Kapat"), ("x", "remove", "Kaldır")]
     CSS = """
     CatalogScreen { padding: 1; background: $surface; }
     CatalogScreen RichLog { height: 1fr; border: round $secondary; }
@@ -76,7 +77,7 @@ class CatalogScreen(ModalScreen):
         self.query_one("#source", Static).update(Text("\n".join(
             catalog_store.footer(self.catalog, self.result.status, self.result.http_code))))
 
-    @work(thread=True, exit_on_error=False)
+    @background
     def refresh_catalog(self):
         try:
             result = catalog_store.refresh_result()
@@ -120,7 +121,7 @@ class CatalogScreen(ModalScreen):
             self.query_one(RichLog).clear()
             self.operation(action, key, self.catalog)
 
-    @work(thread=True, exit_on_error=False)
+    @background
     def operation(self, action, key, catalog):
         rows = []
         worker = get_current_worker()
@@ -148,17 +149,10 @@ class CatalogScreen(ModalScreen):
             return confirmed
 
         def run(argv, **kwargs):
-            if kwargs.get("capture_output"):
-                return subprocess.run(argv, **kwargs)
-            with subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                  text=True, errors="replace", **kwargs) as proc:
-                for row in proc.stdout:
-                    emit(row.rstrip("\n"))
-                return subprocess.CompletedProcess(argv, proc.wait())
+            return self.runner(argv, emit=emit, **kwargs)
 
         try:
-            runner = run if self.runner is None else lambda argv, **kw: self.runner(argv, emit=emit, **kw)
-            code = installer.manage(action, key, False, self.entries, runner=runner,
+            code = installer.manage(action, key, False, self.entries, runner=run,
                                     emit=emit, confirm=confirm, catalog=catalog)
             if confirmed and code == 0:
                 self.app.call_from_thread(self.installed)

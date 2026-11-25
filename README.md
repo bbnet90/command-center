@@ -1,32 +1,46 @@
 # command-center
 
-A small offline terminal dashboard for Python 3.11+. The core discovers panels
-from installed packages and opens a Textual dashboard on a terminal. Use
-`command-center --plain` to print a single snapshot. Redirected input or output
-also selects the static view. Installing
-or removing a plugin changes which panels are available.
+[Hızlı başlangıç (Türkçe)](README.tr.md)
 
-Install with `pip install .` and run `command-center`. For development, install
-with `pip install -e '.[dev]'` and run `pytest`.
+Command Center is a local-first terminal dashboard for Python 3.11+. Installed
+Python packages and configured commands supply independent panels. A slow panel
+loads in the background. A failed refresh keeps its last successful snapshot.
 
-## Interactive dashboard
+## Installation and first run
 
-Tab and Shift+Tab move between the optional question input and panels. Use
-the arrows or PageUp/PageDown to scroll a panel, `r` to reload it and `R` to
-reload all panels. Brackets move the focused panel in the display order.
-Press `l` to toggle single/two-column layout and `t` to cycle built-in themes.
-Two columns require at least 100 terminal columns. Each panel loads independently.
-A ten-second notice leaves its worker running and late results can still appear.
+With pipx and Git installed, run:
 
-Press `m` for modules. Enter previews installation and `x` previews removal.
-Confirm with `y` or press another key to cancel. Package output appears in the
-log. Escape closes the catalog. Use `q` outside the input or Ctrl+C to quit.
+```sh
+pipx install git+https://github.com/bbnet90/command-center.git
+command-center
+```
 
-`config.toml` accepts `layout = "single"` or `"two-column"` and a built-in
-`theme` name. The dashboard saves its `order`, `layout`, and `theme` alongside
-`seen` in state.json. Saved preferences override configuration defaults. The
-`panels` list still controls visibility. Saved IDs come first, followed by
-the remaining visible panels in configured or alphabetical order.
+For a checkout of this version, run `pipx install .` from the repository.
+A terminal opens the dashboard. With no panels the catalog opens automatically:
+select a panel, press Enter to inspect the source and installation command,
+then press y to confirm. A verified panel appears immediately. Redirected
+input or output and `command-center --plain` select the static snapshot.
+
+## Dashboard keys
+
+| Key | Action |
+| --- | --- |
+| Tab / Shift+Tab | Focus the question input or next/previous panel |
+| ↑ ↓ / PageUp PageDown | Scroll inside the focused panel |
+| r / R | Refresh the focused panel / all panels |
+| [ / ] | Move the focused panel earlier / later |
+| Enter | Open the focused panel's optional program, or submit a question in the input |
+| l / t | Cycle the layout / built-in theme |
+| m | Open the module catalog; Enter previews installation, x previews removal |
+| y | Confirm the displayed package operation |
+| Esc | Dismiss the modal or discard a pending model answer |
+| ? | Show keyboard help |
+| q / Ctrl+C | Quit (q outside text input); confirm if a package process is active |
+
+Two-column layout activates at 100 terminal columns. Narrower terminals keep
+the saved preference and display one column. Panel borders show the last
+successful update time. After ten seconds the dashboard flags a slow panel
+and continues to accept a late result.
 
 ## Optional question provider
 
@@ -62,8 +76,8 @@ def panel():
 ```
 
 Return a plain dictionary with a non-empty string title and a list of text
-lines. Plugins can use this contract without importing the core. A load, call,
-or validation failure displays an error inside the affected panel.
+lines. An optional `open` argument list enables an explicit terminal action. Plugins can use this contract without importing the core. A load, call,
+or validation failure displays a panel error on the first load. Later failures retain the last successful data and mark it stale.
 
 ## Configuration
 
@@ -74,8 +88,23 @@ Create `$XDG_CONFIG_HOME/command-center/config.toml` (default
 panels = ["example", "another"]
 ```
 
+| Optional key | Meaning |
+| --- | --- |
+| panels | Visible panel IDs in preferred order |
+| catalog_refresh | Boolean, defaults to true; false disables catalog requests |
+| refresh_seconds | Automatic panel refresh interval. Missing or zero disables it; other integers clamp to 30–3600 seconds. Modals pause refreshes and active loads are skipped. |
+| layout | single (default) or two-column |
+| theme | Built-in Textual theme name; unknown names fall back to the built-in default |
+| llm | Preferred installed provider ID |
+| command_panel | Array of local command definitions (see below) |
+
+The state file stores `seen` catalog IDs and the dashboard's `order`, `layout`
+and `theme`. Saved choices override config defaults. Known saved order IDs
+come first, followed by other visible panels in configured or alphabetical
+order. Writes are atomic. A corrupt state file is treated as missing.
+
 Unknown IDs are silently skipped. An empty list selects no panels. A missing
-file, missing key, or malformed configuration shows all installed panels in ID order.
+file, missing key, or malformed configuration makes all installed panels visible. The static view sorts them by ID; the dashboard applies any saved order first.
 
 ## Catalog and package management
 
@@ -130,6 +159,46 @@ After publishing the package, paste the generated `[[module]]` entry into the
 catalog and edit its title, description, and published source. The ID must match
 the entry point. See the catalog example above.
 
-**Contract stability.** Changes are additive. The core reads `title` and `lines`
+**Contract stability.** Changes are additive. The core reads `title`, `lines` and optional `open`
 and ignores extra keys. It displays at most 100 lines of 300 characters each,
 reserving the final line for a truncation notice whenever content is clipped.
+
+## Non-Python modules
+
+Command panels are local programs configured by the user. The shell discovers
+these alongside Python entry points. Python wins when both use the same ID.
+For example, install a version of the Todo CLI supporting `panel --json`,
+put its executable on PATH, then add this to command-center's config.toml:
+
+```toml
+[[command_panel]]
+id = "todo"
+title = "Yapılacaklar"
+panel = ["todo", "panel", "--json"]
+open = ["todo"]
+```
+
+The dashboard runs the argument list directly from the home directory, with
+stdin closed. Return one UTF-8 JSON document on stdout, for example
+`{"title":"Yapılacaklar","lines":["Görev yok."],"open":["todo"]}`.
+The stdout limit is 64 KiB. The optional integer `timeout` defaults to 10 seconds and accepts 1–30. Each panel loads
+independently. `check` reports errors and `doctor` lists configuration issues.
+The optional open command (explicit configuration takes precedence) runs only
+on Enter in the focused panel. The dashboard lends it the terminal and
+refreshes the panel when it returns. Only configure trusted programs.
+
+## Trust and troubleshooting
+
+The catalog is the trust root for installation sources. Review the source,
+revision and exact package command before confirming an install. A missing
+revision allows upstream changes. Python panels execute in the dashboard
+process with your account permissions. Command panels run as your user too.
+Timeouts and output limits bound execution and display; providers can still
+access local files. Only install packages and configure commands you trust.
+
+Run `command-center doctor` for an offline report of paths, recognized config,
+terminal, catalog and installed panel checks. It calls each installed provider.
+Use `command-center check <id>` for errors, or `command-center list` to inspect
+visibility. For a missing external command, verify PATH in the terminal
+launching the dashboard. For development, run `pip install -e '.[dev]'`
+and `python -m pytest`.

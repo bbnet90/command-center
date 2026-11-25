@@ -1,3 +1,5 @@
+from dataclasses import replace
+from .command_panels import CommandPanel
 from difflib import get_close_matches
 import os
 from pathlib import Path
@@ -8,7 +10,7 @@ import tempfile
 
 from rich.cells import cell_len
 
-from .plugins import conflicts, distribution_name, inspect_panel
+from .plugins import conflicts, package_label, inspect_panel
 from .rendering import PANEL_WIDTH, line
 
 
@@ -17,8 +19,10 @@ def _report(entry) -> bool:
     lines = result.panel["lines"] if result.panel else []
     width = max(map(cell_len, lines), default=0)
     status = "FAIL" if result.error else "OK"
-    line(f"{entry.name} · {distribution_name(entry) or '?'} · {status} · "
+    line(f"{entry.name} · {package_label(entry)} · {status} · "
          f"{result.elapsed_ms:.2f} ms · {len(lines)} satır · en geniş: {width}")
+    if result.invalid_open:
+        line("Uyarı: open komutu geçersiz.")
     if result.error:
         line(result.error)
     if width > PANEL_WIDTH - 4:
@@ -31,7 +35,7 @@ def _report(entry) -> bool:
     return result.error is None
 
 
-def _isolated(key, runner) -> bool:
+def _isolated(key, runner, entry=None) -> bool:
     with tempfile.TemporaryDirectory() as workdir:
         root = Path(workdir)
         env = os.environ.copy()
@@ -47,13 +51,16 @@ def _isolated(key, runner) -> bool:
         args = [sys.executable, "-m", "command_center", "check"]
         if key.startswith("-"):
             args.append("--")
-        child = runner([*args, key], env=env, cwd=workdir)
+        if isinstance(entry, CommandPanel):
+            code = int(not _report(replace(entry, env=env)))
+        else:
+            code = runner([*args, key], env=env, cwd=workdir).returncode
         created = sorted(str(path.relative_to(root)) for path in root.rglob("*"))
         if created:
             line(f"{key} · FAIL · panel dosya oluşturdu: " + ", ".join(created))
-        elif child.returncode:
+        elif code:
             line(f"{key} · FAIL")
-        return child.returncode == 0 and not created
+        return code == 0 and not created
 
 
 def check(entries, key=None, *, isolated=False, runner=None) -> int:
@@ -63,14 +70,14 @@ def check(entries, key=None, *, isolated=False, runner=None) -> int:
         if matches:
             line("Benzer kimlikler: " + ", ".join(matches))
         return 1
-    duplicates = {} if isolated else conflicts()
+    duplicates = conflicts()
     ok = True
     for name in ([key] if key is not None else sorted(entries)):
         if name in duplicates:
             line(f"Giriş noktası çakışması: {name} · " + ", ".join(duplicates[name]))
         if isolated:
             try:
-                passed = _isolated(name, runner or subprocess.run)
+                passed = _isolated(name, runner or subprocess.run, entries[name])
             except (OSError, ValueError) as exc:
                 line(f"{name} · FAIL · {exc}")
                 passed = False

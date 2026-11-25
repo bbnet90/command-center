@@ -1,4 +1,4 @@
-from typing import TypedDict
+from typing import NotRequired, TypedDict
 
 from .text import clean
 
@@ -10,6 +10,13 @@ MAX_CHARS = 300
 class PanelData(TypedDict):
     title: str
     lines: list[str]
+    open: NotRequired[list[str]]
+
+
+def valid_argv(value):
+    return (isinstance(value, list) and 1 <= len(value) <= 16
+            and all(isinstance(arg, str) and 1 <= len(arg) <= 200 and "\0" not in arg for arg in value)
+            and not value[0].startswith("-"))
 
 
 def validate(value: object) -> PanelData:
@@ -29,4 +36,7 @@ def validate(value: object) -> PanelData:
         output.append(text[:MAX_CHARS])
     if truncated:
         output[MAX_LINES - 1:] = ["… (kısaltıldı)"]
-    return {"title": clean(title), "lines": output}
+    panel: PanelData = {"title": clean(title), "lines": output}
+    if valid_argv(value.get("open")):
+        panel["open"] = value["open"]
+    return panel

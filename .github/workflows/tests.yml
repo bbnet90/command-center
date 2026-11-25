@@ -13,3 +13,23 @@ jobs:
           python-version: ${{ matrix.python }}
       - run: python -m pip install '.[dev]'
       - run: python -m pytest
+
+  wheel:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install build
+      - run: python -m build --wheel
+      - name: Smoke test installed wheel outside checkout
+        run: |
+          python -m venv "$RUNNER_TEMP/installed"
+          source "$RUNNER_TEMP/installed/bin/activate"
+          python -m pip install dist/*.whl
+          cd "$RUNNER_TEMP"
+          command-center --version
+          command-center catalog --offline
+          command-center new smoke --dir "$RUNNER_TEMP/smoke"
+          command-center doctor
