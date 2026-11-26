@@ -99,6 +99,8 @@ class CommandPanel:
     timeout: int
     processes: Processes = field(repr=False)
     env: dict | None = None
+    managed: bool = False
+    data_file_env: str | None = None
 
     def command_paths(self):
         for label, argv in (("panel", self.argv), ("open", self.opening)):
@@ -112,7 +114,17 @@ class CommandPanel:
         return self.read
 
     def read(self):
-        home = self.env["HOME"] if self.env is not None else Path.home()
+        result = self.read_json()
+        if isinstance(result, dict):
+            result.setdefault("title", self.title)
+            if self.opening:
+                # Keep the public panel contract independent of the prefix length.
+                result["open"] = ([Path(self.opening[0]).stem, *self.opening[1:]]
+                                  if self.managed else self.opening)
+        return result
+
+    def read_json(self):
+        home = (self.env or {}).get("HOME") or Path.home()
         proc = self.processes.start(self.argv, cwd=home, env=self.env, stdin=subprocess.DEVNULL,
                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         diagnostics = bytearray()
@@ -150,12 +162,7 @@ class CommandPanel:
             self.processes.finish(proc)
             reader.join()
             sys.stderr.write(diagnostics.decode("utf-8", errors="replace"))
-        result = json.loads(raw.decode("utf-8"))
-        if isinstance(result, dict):
-            result.setdefault("title", self.title)
-            if self.opening:
-                result["open"] = self.opening
-        return result
+        return json.loads(raw.decode("utf-8"))
 
 
 def configured(processes=None):
@@ -177,4 +184,6 @@ def configured(processes=None):
                 entries[key] = CommandPanel(key, row["panel"], title, row.get("open"), seconds, processes)
                 continue
         errors.append(f"command_panel[{index}] geçersiz veya yinelenmiş.")
+    from .managed import load_entries
+    load_entries(entries, errors, processes)
     return entries, errors

@@ -143,7 +143,10 @@ class Section(VerticalScroll):
             with self.app.suspend():
                 # Leave the context normally so the terminal is always restored.
                 try:
-                    await self.app.open_runner(argv)
+                    if getattr(self.entry, "managed", False):
+                        await self.app.open_runner(self.entry.opening, env=self.entry.env)
+                    else:
+                        await self.app.open_runner(argv)
                 except CommandLookupError as exc:
                     notice = str(exc)
                 except FileNotFoundError:
@@ -333,8 +336,8 @@ class Dashboard(App):
             section.reload()
         self.clock()
 
-    async def run_open(self, argv):
-        proc = await asyncio.create_subprocess_exec(*resolve_command(argv))
+    async def run_open(self, argv, *, env=None):
+        proc = await asyncio.create_subprocess_exec(*resolve_command(argv, env), env=env)
         self.open_child = proc
         try:
             await proc.wait()

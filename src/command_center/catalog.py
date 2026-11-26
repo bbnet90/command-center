@@ -21,6 +21,10 @@ class Module:
     ref: str | None = None
     featured: bool = False
     origin: str = "local"
+    installer: str | None = None
+    sha256: str | None = None
+    executable: str | None = None
+    data_file_env: str | None = None
 
 
 def valid_source(source: str) -> bool:
@@ -55,13 +59,24 @@ def _entry(row: dict, origin: str) -> Module:
     title, description = clean(title).strip(), clean(description).strip()
     if not (ID.fullmatch(panel_id) and 0 < len(title) <= 60 and 0 < len(description) <= 200):
         raise ValueError
-    if kind not in ("panel", "command", "llm") or not valid_source(source):
+    if kind not in ("panel", "command", "llm"):
+        raise ValueError
+    installer = row.get("installer")
+    digest, executable, variable = (row.get(k) for k in ("sha256", "executable", "data_file_env"))
+    if installer is not None:
+        if (installer != "npm-tarball" or kind != "command" or ref is not None
+                or not re.fullmatch(r"https://github[.]com/[\w.-]+/[\w.-]+/releases/download/[\w.-]+/[\w.-]+[.]tgz", source, re.ASCII)
+                or not isinstance(digest, str) or not re.fullmatch("[0-9a-f]{64}", digest)
+                or not isinstance(executable, str) or not ID.fullmatch(executable)
+                or (variable is not None and not re.fullmatch(r"[A-Z][A-Z0-9_]*_DATA_FILE", variable))):
+            raise ValueError
+    elif not valid_source(source):
         raise ValueError
     if ref is not None and not (isinstance(ref, str) and REF.fullmatch(ref)):
         raise ValueError
     if not isinstance(featured, bool):
         raise ValueError
-    return Module(panel_id, title, description, kind, source, ref, featured, origin)
+    return Module(panel_id, title, description, kind, source, ref, featured, origin, installer, digest, executable, variable)
 
 
 def parse(data: bytes, origin: str = "local") -> tuple[dict[str, Module], int]:

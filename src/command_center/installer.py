@@ -117,9 +117,14 @@ def manage(action, key, yes, entries, *, env=None, runner=None, emit=line, confi
         emit("Geçersiz modül kimliği.")
         return 2
     try:
+        managed = False
         if adding:
             if key in entries:
-                emit("Bu modül zaten kurulu.")
+                from .command_panels import CommandPanel
+                if isinstance(entries[key], CommandPanel) and not entries[key].managed:
+                    emit("Bu komut paneli elle yapılandırılmış. Mevcut kayıt korunuyor.")
+                else:
+                    emit("Bu modül zaten kurulu.")
                 return 0
             modules = (catalog or load_catalog()).modules
             item = modules.get(key)
@@ -129,35 +134,45 @@ def manage(action, key, yes, entries, *, env=None, runner=None, emit=line, confi
                 if matches:
                     emit("Benzer kimlikler: " + ", ".join(matches))
                 return 1
-            if item.kind != "panel":
+            managed = item.installer == "npm-tarball"
+            if not managed and item.kind != "panel":
                 emit("Bu tür henüz desteklenmiyor")
                 return 1
-            operation = plan(env, module=item)
+            if managed:
+                from .managed import prefixes
+                emit(f"Kurulum dizini: {prefixes(key)}", plain=True)
+            else:
+                operation = plan(env, module=item)
             emit(item.title, plain=True)
             emit(item.source, plain=True)
-            emit(item.ref or "sürüme sabitlenmemiş", plain=True)
+            emit(item.sha256 or item.ref or "sürüme sabitlenmemiş", plain=True)
         else:
             if key not in entries:
                 emit("Bu panel kurulu değil.")
                 return 1
-            dist = distribution_name(entries[key])
-            if not dist:
-                emit("Panelin paket adı belirlenemedi.")
-                return 1
-            operation = plan(env, dist=dist)
-            affected = sorted(k for k, ep in entries.items()
-                              if normalized(distribution_name(ep) or "") == normalized(dist))
-            emit(f"Kaldırılacak paket: {dist}")
-            emit("Etkilenen paneller: " + ", ".join(affected))
-            if len(affected) > 1:
-                emit("Dikkat: Bu paketin tüm panelleri kaldırılacak.")
-        if operation.blocked:
+            managed = getattr(entries[key], "managed", False)
+            if managed:
+                emit(f"Kaldırılacak komut modülü: {key} (veriler korunur)")
+            else:
+                dist = distribution_name(entries[key])
+                if not dist:
+                    emit("Panelin paket adı belirlenemedi.")
+                    return 1
+                operation = plan(env, dist=dist)
+                affected = sorted(k for k, ep in entries.items()
+                                  if normalized(distribution_name(ep) or "") == normalized(dist))
+                emit(f"Kaldırılacak paket: {dist}")
+                emit("Etkilenen paneller: " + ", ".join(affected))
+                if len(affected) > 1:
+                    emit("Dikkat: Bu paketin tüm panelleri kaldırılacak.")
+        if not managed and operation.blocked:
             emit("Sistem Python ortamı dışarıdan yönetiliyor. Önce command-center aracını pipx ile veya bir sanal ortama kurun.")
             emit("pipx ile kurduktan sonra:")
-        emit(shlex.join(operation.argv), plain=True)
+        if not managed:
+            emit(shlex.join(operation.argv), plain=True)
         if adding:
             emit("Bu işlem üçüncü taraf kod kurar.")
-        if operation.blocked:
+        if not managed and operation.blocked:
             return 1
         if confirm is not None:
             if not confirm():
@@ -170,6 +185,18 @@ def manage(action, key, yes, entries, *, env=None, runner=None, emit=line, confi
             if input("Devam edilsin mi? [e/H] ").strip().casefold() != "e":
                 emit("İşlem iptal edildi.")
                 return 0
+        if managed:
+            from .managed import install, remove
+            try:
+                if adding:
+                    install(item, runner)
+                else:
+                    remove(key, entries[key].argv[0])
+            except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as exc:
+                emit(str(exc))
+                return 1
+            emit("Kuruldu ve bağlandı." if adding else "Paket kaldırıldı.")
+            return 0
         # An unrelated local directory must never shadow a registry project name.
         with tempfile.TemporaryDirectory() as workdir:
             if runner(operation.argv, cwd=workdir).returncode:

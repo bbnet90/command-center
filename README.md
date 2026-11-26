@@ -202,3 +202,18 @@ Use `command-center check <id>` for errors, or `command-center list` to inspect
 visibility. For a missing external command, verify PATH in the terminal
 launching the dashboard. For development, run `pip install -e '.[dev]'`
 and `python -m pytest`.
+
+### Install a catalog command panel
+
+With Node.js 20+ and npm on PATH, select Todo in the module catalog or run
+`command-center add todo`. Review the release URL, SHA-256 and private prefix
+before confirming. Run `command-center check todo --isolated`, then open the
+dashboard and press Enter on the panel. Manual panel definitions take priority.
+
+Command modules use pinned GitHub release tarballs. Installation checks the digest,
+runs npm offline with lifecycle scripts disabled, then executes the installed
+program once to read its format-1 descriptor. Only install code you trust.
+Registrations live under the config directory in `modules.d`. The data directory
+holds private installations under `packages` and persistent files under
+`module-data`. Removing and reinstalling Todo preserves its managed tasks.
+An existing standalone installation keeps its own data.

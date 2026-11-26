@@ -16,3 +16,7 @@ def cache_dir() -> Path:
 
 def state_dir() -> Path:
     return _dir("XDG_STATE_HOME", ".local/state")
+
+
+def data_dir() -> Path:
+    return _dir("XDG_DATA_HOME", ".local/share")
