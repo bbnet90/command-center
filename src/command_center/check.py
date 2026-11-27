@@ -55,6 +55,8 @@ def _isolated(key, runner, entry=None) -> bool:
         if key.startswith("-"):
             args.append("--")
         if isinstance(entry, CommandPanel):
+            if entry.data_file_env:
+                env[entry.data_file_env] = str(root / "tasks.json")
             code = int(not _report(replace(entry, env=env)))
         else:
             code = runner([*args, key], env=env, cwd=workdir).returncode

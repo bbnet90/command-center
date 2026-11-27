@@ -35,3 +35,17 @@ Enter ile kaynağı ve komutu incele, y ile kurulumu onayla.
 - Katalog bağlantısını kapatmak için `~/.config/command-center/config.toml` dosyasına `catalog_refresh = false` yaz. XDG_CONFIG_HOME ayarlıysa onun altındaki command-center klasörü kullanılır.
 
 [Yapılandırma ve modül yazma kılavuzu (İngilizce)](README.md)
+
+### Katalogdan komut paneli kurma
+
+Node.js 20+ ve npm PATH üzerinde olmalı. Modül kataloğunda Todo’yu seç veya
+`command-center add todo` çalıştır. Kaynak, SHA-256 ve özel kurulum dizinini
+kontrol edip onayla. `command-center check todo --isolated` ile doğrula.
+Dashboard’da Todo paneline odaklanıp Enter ile aç, q ile dön.
+
+Çatı paketin özetini doğrular, npm betiklerini kapatıp çevrimdışı kurar ve
+kurulan programı bir kez çalıştırarak format-1 tarifini okur. Yalnızca
+güvendiğin modülleri kur. Kayıtlar yapılandırma dizinindeki `modules.d`
+altındadır. `command-center remove todo` özel kurulumu kaldırır. Yönetilen
+görevler veri dizininde `module-data/todo` altında kalır ve yeniden kurulumda
+görünür. Önceden elle kurduğun Todo kendi verisini kullanmaya devam eder.

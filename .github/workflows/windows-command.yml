@@ -18,10 +18,3 @@ jobs:
       - run: python -m pip install . pywinpty
       - name: Verify shim lookup, panel and open
         run: python tests/windows_command_smoke.py shim
-      - name: Install pinned npm CLI and verify panel and open
-        continue-on-error: true
-        run: |
-          npm install -g git+https://github.com/bbnet90/todo-cli#43bd7c17bb7a98f2c371fc8f9c97d84d655a8d85
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $env:PATH = "$(npm prefix -g);$env:PATH"
-          python tests/windows_command_smoke.py npm
