@@ -126,9 +126,14 @@ def manage(action, key, yes, entries, *, env=None, runner=None, emit=line, confi
                 else:
                     emit("Bu modül zaten kurulu.")
                 return 0
-            modules = (catalog or load_catalog()).modules
+            selected_catalog = catalog or load_catalog()
+            modules = selected_catalog.modules
             item = modules.get(key)
             if item is None:
+                if key in selected_catalog.invalid:
+                    emit(f"Katalog girişi geçersiz: {key}")
+                    emit(selected_catalog.invalid[key])
+                    return 1
                 emit(f"Bilinmeyen modül: {key}")
                 matches = get_close_matches(key, modules)
                 if matches:

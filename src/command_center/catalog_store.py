@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum, auto
 from http.client import HTTPException
 from importlib import resources
@@ -69,24 +69,29 @@ def refresh_result(open_url=None) -> RefreshResult:
 class Catalog:
     modules: dict[str, Module]
     age_days: int | None
+    invalid: dict[str, str] = field(default_factory=dict)
 
 
 def load_catalog(clock=time.time) -> Catalog:
     age = None
+    invalid = {}
     try:
         with (cache_dir() / "catalog.toml").open("rb") as stream:
-            modules, _ = parse(stream.read(MAX_BYTES + 1), "remote")
+            modules, _ = parse(stream.read(MAX_BYTES + 1), "remote", invalid=invalid)
             age = max(0, int((clock() - os.fstat(stream.fileno()).st_mtime) // 86400))
     except (OSError, ValueError, RecursionError):
         snapshot = resources.files("command_center").joinpath("data", "catalog.toml")
-        modules, _ = parse(snapshot.read_bytes(), "bundled")
+        invalid.clear()
+        modules, _ = parse(snapshot.read_bytes(), "bundled", invalid=invalid)
     try:
         with (config_dir() / "catalog.local.toml").open("rb") as stream:
-            overrides, _ = parse(stream.read(MAX_BYTES + 1), "local")
+            local_invalid = {}
+            overrides, _ = parse(stream.read(MAX_BYTES + 1), "local", invalid=local_invalid)
         modules.update(overrides)
+        invalid.update(local_invalid)
     except (OSError, ValueError, RecursionError):
         pass
-    return Catalog(modules, age)
+    return Catalog(modules, age, {key: reason for key, reason in invalid.items() if key not in modules})
 
 
 def footer(catalog, status=None, http_code=None):

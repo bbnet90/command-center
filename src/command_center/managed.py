@@ -1,5 +1,6 @@
 """Install pinned, dependency-free npm command modules into private prefixes."""
 from contextlib import contextmanager
+import errno
 import gzip
 import hashlib
 from http.client import HTTPException
@@ -37,10 +38,11 @@ def record(key):
 
 
 @contextmanager
-def exclusive(path):
+def exclusive():
     """The OS releases this advisory lock when the installer exits."""
+    path = data_dir() / "modules.lock"
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.with_suffix(".lock").open("a+b") as stream:
+    with path.open("a+b") as stream:
         stream.seek(0)
         try:
             if os.name == "nt":
@@ -130,19 +132,30 @@ def load_entries(entries, errors, processes):
             errors.append(f"{path.name}: {exc}")
 
 
+def remove_empty_prefix(path):
+    try:
+        path.rmdir()
+    except OSError as exc:
+        if exc.errno not in (errno.ENOENT, errno.ENOTEMPTY, errno.EEXIST):
+            raise
+
+
 def install(item, runner):
     node, npm = shutil.which("node"), shutil.which("npm")
     if not node or not npm:
         raise ValueError("Node.js 20+ ve npm PATH üzerinde bulunmalı.")
-    version = subprocess.check_output([node, "--version"], text=True, timeout=5)
-    if int(version.strip().lstrip("v").split(".")[0]) < 20:
-        raise ValueError("Node.js 20+ gerekli.")
     npm_cmd = [npm]
     if os.name == "nt":
         # Invoke npm through Node directly, including when the prefix has spaces.
-        npm_cmd = [node, str(Path(npm).parent / "node_modules/npm/bin/npm-cli.js")]
+        npm_cli = Path(npm).parent / "node_modules/npm/bin/npm-cli.js"
+        if not npm_cli.is_file():
+            raise ValueError(f"npm-cli.js bulunamadı: {npm_cli}. Standart bir Node.js kurulumu gerekir.")
+        npm_cmd = [node, str(npm_cli)]
+    version = subprocess.check_output([node, "--version"], text=True, timeout=5)
+    if int(version.strip().lstrip("v").split(".")[0]) < 20:
+        raise ValueError("Node.js 20+ gerekli.")
     path = record(item.id)
-    with exclusive(path):
+    with exclusive():
         if path.exists():
             raise ValueError("Modül kaydı zaten var.")
         try:
@@ -184,12 +197,13 @@ def install(item, runner):
                 atomic_write(path, content.encode())
         except BaseException:
             shutil.rmtree(prefix)
+            remove_empty_prefix(prefix.parent)
             raise
 
 
 def remove(key, expected_program):
     path = record(key)
-    with exclusive(path):
+    with exclusive():
         row = tomllib.loads(path.read_text(encoding="utf8"))
         if entry_from(row, key, Processes()).argv[0] != expected_program:
             raise ValueError("Modül kaydı değişti; listeyi yenileyin.")
@@ -198,3 +212,8 @@ def remove(key, expected_program):
         path.unlink()
         if prefix.exists():
             shutil.rmtree(prefix)
+        remove_empty_prefix(prefix.parent)
+        try:
+            path.with_suffix(".lock").unlink(missing_ok=True)
+        except OSError:
+            pass
