@@ -46,6 +46,6 @@ Dashboard’da Todo paneline odaklanıp Enter ile aç, q ile dön.
 Çatı paketin özetini doğrular, npm betiklerini kapatıp çevrimdışı kurar ve
 kurulan programı bir kez çalıştırarak format-1 tarifini okur. Yalnızca
 güvendiğin modülleri kur. Kayıtlar yapılandırma dizinindeki `modules.d`
-altındadır. `command-center remove todo` özel kurulumu kaldırır. Yönetilen
-görevler veri dizininde `module-data/todo` altında kalır ve yeniden kurulumda
-görünür. Önceden elle kurduğun Todo kendi verisini kullanmaya devam eder.
+altındadır. `command-center remove todo` özel kurulumu kaldırır. Todo v1.1.0,
+kullanıcı veri dizinindeki görev listesini bağımsız Todo ile paylaşır.
+Paneli kaldırıp yeniden kurduğunda görevlerin korunur.
