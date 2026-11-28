@@ -72,6 +72,7 @@ def test_layers():
     snapshot = resources.files("command_center").joinpath("data", "catalog.toml")
     bundled, dropped = parse(snapshot.read_bytes(), "bundled")
     assert dropped == 0 and bundled and store.load_catalog().modules == bundled
+    assert bundled["todo"].data_file_env is None
     for module in bundled.values():
         if module.kind == "panel" and module.source.startswith("git+"):
             assert re.fullmatch(r"[0-9a-fA-F]{40}", module.ref or ""), module.id

@@ -15,7 +15,8 @@ def cli(*args):
 def smoke(root):
     for name in ("CONFIG", "DATA", "STATE", "CACHE"):
         os.environ[f"XDG_{name}_HOME"] = str(root / name)
-    os.environ.update(HOME=str(root), USERPROFILE=str(root), PYTHONUTF8="1")
+    os.environ.update(HOME=str(root), USERPROFILE=str(root), APPDATA=str(root / "roaming"), PYTHONUTF8="1")
+    os.environ.pop("TODO_CLI_DATA_FILE", None)
     assert shutil.which("todo") is None
     cli("add", "todo", "--yes")
     assert "OK" in cli("check", "todo", "--isolated")
@@ -25,8 +26,12 @@ def smoke(root):
     entry = configured()[0]["todo"]
     assert entry.opening == [entry.argv[0]]
     subprocess.run([*entry.opening, "add", "Persistence check"], env=entry.env, check=True)
+    user_data = Path(os.environ["APPDATA" if os.name == "nt" else "XDG_DATA_HOME"])
+    tasks = user_data / "todo-cli" / "tasks.json"
+    snapshot = tasks.read_bytes()
     assert "Persistence check" in cli("--plain")
     cli("remove", "todo", "--yes")
+    assert tasks.read_bytes() == snapshot
     assert not Path(entry.argv[0]).exists()
     module_record = record("todo")
     package_root = prefixes("todo")

@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Update the bundled Todo panel to v1.1.0 and share its task list with standalone Todo.
+
 ## 0.2.0
 
 - Display Python and command panels together. Explicit panel actions hand the terminal to a local program.

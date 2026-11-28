@@ -214,6 +214,6 @@ Command modules use pinned GitHub release tarballs. Installation checks the dige
 runs npm offline with lifecycle scripts disabled, then executes the installed
 program once to read its format-1 descriptor. Only install code you trust.
 Registrations live under the config directory in `modules.d`. The data directory
-holds private installations under `packages` and persistent files under
-`module-data`. Removing and reinstalling Todo preserves its managed tasks.
-An existing standalone installation keeps its own data.
+holds private installations under `packages`. Todo v1.1.0 uses the same task
+list as standalone Todo in your user data directory. Removing and reinstalling
+the panel preserves that list.
