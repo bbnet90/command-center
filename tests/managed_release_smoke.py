@@ -21,13 +21,24 @@ def smoke(root):
     assert "OK" in cli("check", "todo", "--isolated")
     assert "Görev yok." in cli("--plain")
     from command_center.command_panels import configured
+    from command_center.managed import data_dir, prefixes, record
     entry = configured()[0]["todo"]
     assert entry.opening == [entry.argv[0]]
     subprocess.run([*entry.opening, "add", "Persistence check"], env=entry.env, check=True)
     assert "Persistence check" in cli("--plain")
     cli("remove", "todo", "--yes")
     assert not Path(entry.argv[0]).exists()
+    module_record = record("todo")
+    package_root = prefixes("todo")
+    assert list(module_record.parent.iterdir()) == []
+    assert list(package_root.parent.iterdir()) == []
+    assert (data_dir() / "modules.lock").is_file()
+    print("After remove: modules.d=[], packages=[], modules.lock=present")
     cli("add", "todo", "--yes")
+    assert list(module_record.parent.iterdir()) == [module_record]
+    assert list(package_root.parent.iterdir()) == [package_root]
+    assert len(list(package_root.iterdir())) == 1
+    print("After reinstall: modules.d=[todo.toml], packages/todo=[one prefix], modules.lock=present")
     assert "Persistence check" in cli("--plain")
 
 
